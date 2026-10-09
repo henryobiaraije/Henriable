@@ -453,6 +453,11 @@ error HInvestmentInvalidSettings();
 /// @param id The investment id.
 error HInvestmentNotPending(bytes32 id);
 
+/// @notice Thrown when an operation requires an investment that has finished raising
+///         funds ({HInvestmentStatus.InvestmentDone}) but it has not.
+/// @param id The investment id.
+error HInvestmentNotDone(bytes32 id);
+
 /// @notice Thrown when an investment round's start time is not in the future.
 /// @param startTime The invalid start timestamp.
 error HInvestmentInvalidStartTime(uint256 startTime);

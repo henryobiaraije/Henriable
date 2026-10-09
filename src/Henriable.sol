@@ -30,6 +30,7 @@ HInvestmentInvalidStartTime,
 HInvestmentNoOpenSlot,
 HInvestmentNotAccepting,
 HInvestmentNotActive,
+HInvestmentNotDone,
 HInvestmentNotPending,
 HInvestmentStatus,
 HInvestmentType,
@@ -470,6 +471,72 @@ contract Henriable is HHelper {
     }
 
     //</editor-fold desc="Action:Investor: Invest">
+
+    //<editor-fold desc="Action:Admin:Investment: Set next hire round time">
+
+    /// @notice Sets the window during which riders may request to hire an investment's asset.
+    /// @dev    Only the contract owner (admin) may call this.
+    ///         The opportunity must be funded ({HInvestmentStatus.InvestmentDone}), and the
+    ///         window must be in the future with `_endTime` after `_startTime`.
+    ///         States updated: {investmentsList}.
+    /// @param _investmentId The id of the investment to schedule.
+    /// @param _startTime Timestamp at which the next hire-request round starts; must be in the future.
+    /// @param _endTime Timestamp at which the next hire-request round ends; must be after _startTime.
+    function actionSetNextHireRoundTime(bytes32 _investmentId, uint256 _startTime, uint256 _endTime)
+    external
+    onlyOwner
+    {
+        // Get the modifiable investment (reverts if it is not registered).
+        HInvestment storage investment = getInvestmentStorage(_investmentId);
+
+        // Hire times may only be set once investing has finished.
+        HInvestmentStatus[] memory allowedStatuses = new HInvestmentStatus[](1);
+        allowedStatuses[0] = HInvestmentStatus.InvestmentDone;
+
+        bool investmentNotDone = !isInvestmentStatus(_investmentId, allowedStatuses);
+        if (investmentNotDone) revert HInvestmentNotDone(_investmentId);
+
+        // The round must start in the future...
+        bool startTimeNotInFuture = _startTime <= block.timestamp;
+        if (startTimeNotInFuture) revert HInvestmentInvalidStartTime(_startTime);
+
+        // ...and end after it starts.
+        bool endTimeNotAfterStartTime = _endTime <= _startTime;
+        if (endTimeNotAfterStartTime) revert HInvestmentInvalidEndTime(_startTime, _endTime);
+
+        // Apply the new hire-request window.
+        investment.timeNextRiderHireRequestStart = _startTime;
+        investment.timeNextRiderHireRequestEnd = _endTime;
+    }
+
+    //</editor-fold desc="Action:Admin:Investment: Set next hire round time">
+
+    //<editor-fold desc="Action:Admin:Investment: Clear next hire time">
+
+    /// @notice Clears the rider hire-request window for a funded investment.
+    /// @dev    Only the contract owner (admin) may call this.
+    ///         The opportunity must be funded ({HInvestmentStatus.InvestmentDone}); both
+    ///         hire-request times are reset to 0.
+    ///         States updated: {investmentsList}.
+    /// @param _investmentId The id of the investment whose hire window is cleared.
+    function actionClearNextHireTime(bytes32 _investmentId) external onlyOwner {
+        // Get the modifiable investment (reverts if it is not registered).
+        HInvestment storage investment = getInvestmentStorage(_investmentId);
+
+        // Hire times may only be cleared once investing has finished.
+        HInvestmentStatus[] memory allowedStatuses = new HInvestmentStatus[](1);
+        allowedStatuses[0] = HInvestmentStatus.InvestmentDone;
+        allowedStatuses[1] = HInvestmentStatus.Pending;
+
+        bool notReadyToSetHireTime = !isInvestmentStatus(_investmentId, allowedStatuses);
+        if (notReadyToSetHireTime) revert HInvestmentNotDone(_investmentId);
+
+        // Reset the next hire-request window.
+        investment.timeNextRiderHireRequestStart = 0;
+        investment.timeNextRiderHireRequestEnd = 0;
+    }
+
+    //</editor-fold desc="Action:Admin:Investment: Clear next hire time">
 
     //</editor-fold desc="Actions">
 }

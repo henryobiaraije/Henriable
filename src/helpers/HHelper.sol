@@ -187,11 +187,12 @@ contract HHelper is Ownable {
     /// @notice Advances an investment's lifecycle status when its current state and
     ///         timing allow it.
     /// @dev    State machine: this is the sole place that mutates {HInvestment}.status.
-    ///         Only a Pending opportunity can advance here; once the admin-set window
-    ///         has opened (`timeNextInvestmentStart <= now <= timeNextInvestmentEnd`)
-    ///         it moves Pending -> AcceptingInvestments. It runs lazily, e.g. when an
-    ///         investor calls actionInvest, so the status catches up on first use.
-    ///         After each status update it returns.
+    ///         - Pending -> AcceptingInvestments once the admin-set window opens
+    ///           (`timeNextInvestmentStart <= now <= timeNextInvestmentEnd`).
+    ///         - AcceptingInvestments -> InvestmentDone once the asset's senior and
+    ///           junior pools are both filled, recording {HInvestment.investmentsDoneAt}.
+    ///         It runs lazily, e.g. when an investor calls actionInvest, so the status
+    ///         catches up on first use. After each status update it returns.
     /// @param investmentId The id of the investment to update.
     function maybeUpdateInvestmentStatus(bytes32 investmentId) internal {
         HInvestment storage investment = getInvestmentStorage(investmentId);
@@ -208,6 +209,21 @@ contract HHelper is Ownable {
 
             if (withinInvestmentWindow) {
                 investment.status = HInvestmentStatus.AcceptingInvestments;
+                return;
+            }
+        }
+
+        if (currentStatus == HInvestmentStatus.AcceptingInvestments) {
+            // The round is done once every investor slot the asset requires is filled.
+            HAsset storage asset = getAssetStorage(investment.assetId);
+
+            bool seniorPoolFilled = investment.seniorInvestorsList.length == asset.totalNumberOfSeniorInvestorsNeeded;
+            bool juniorPoolFilled = investment.juniorInvestorsList.length == asset.totalNumberOfJuniorInvestorsNeeded;
+            bool investmentFullyFunded = seniorPoolFilled && juniorPoolFilled;
+
+            if (investmentFullyFunded) {
+                investment.status = HInvestmentStatus.InvestmentDone;
+                investment.investmentsDoneAt = block.timestamp;
                 return;
             }
         }
