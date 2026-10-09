@@ -15,8 +15,10 @@ HAssetInvalidCostPrice,
 HAssetInvalidId,
 HAssetInvalidName,
 HAssetInvalidSellPrice,
+HAssetInvalidSettings,
 HAssetNotActive,
 HInvestment,
+HInvestmentAlreadyComplete,
 HInvestmentAlreadyExists,
 HInvestmentHasInvestors,
 HInvestmentInvalidAmount,
@@ -51,6 +53,7 @@ HRiderPayin,
 HRiderPayinBelowMinimum,
 HRiderPayinLate,
 HRiderPaymentsCompleted,
+HRiderPaymentsNotCompleted,
 HSharingBreakdown
 } from "./types/common.sol";
 import {HHelper} from "./helpers/HHelper.sol";
@@ -109,7 +112,10 @@ contract Henriable is HHelper {
         bool sellPriceMissing = _asset.sellPrice == 0;
         if (sellPriceMissing) revert HAssetInvalidSellPrice();
 
-        // @todo: Add calc... to calculate that the pricing tally, e.g. that selling price would be nough to pay all investors and owner too.
+        // The investor pools must fund the asset and the sell price must cover the
+        // principal plus the profits promised to both pools, leaving the owner a surplus.
+        bool assetSettingsIncorrect = !isAssetSettingsCorrect(_asset);
+        if (assetSettingsIncorrect) revert HAssetInvalidSettings();
 
         //</editor-fold desc="Verify Parameters">
 
@@ -642,16 +648,17 @@ contract Henriable is HHelper {
 
     /// @notice Lets the hired rider make a periodic payment under a running hire purchase.
     /// @dev    The rider must be the one hired on an investment in {HInvestmentStatus.Hired},
-    ///         must not have completed the target total, must pay a non-late payment of at
-    ///         least {HInvestment.minimumRiderPeriodicPayingsUsd}. The payment is split by
-    ///         {calcSharingFormula} (currently equally) and credited to the owner, the
-    ///         senior/junior investor pools and the rider's savings.
+    ///         must not have completed the target total, and must make a non-late payment of
+    ///         at least {HInvestment.minimumRiderPeriodicPayingsUsd} plus the asset's
+    ///         {HAsset.riderSlashableRepayableExtraCharge}. The extra charge is set aside as
+    ///         the rider's savings, and the rest is split by {calcSharingFormula} and credited
+    ///         to the owner and the senior/junior investor pools.
     ///         States updated: {riderPayinsList}, {riderPayins}, {HInvestment.riderPayinsHistory},
     ///         {HInvestment.riderNextPayinDate}, {ownerPayoutsList}, {investorPayoutList},
     ///         {HInvestment.riderSavings}, {HInvestment.investmentPayoutHistory} and the
     ///         per-investor payout histories.
     /// @param _investmentId The id of the investment being paid.
-    /// @param _approvedUSD The USDC the rider is paying; must be at least the minimum.
+    /// @param _approvedUSD The USDC the rider is paying; must be at least the minimum plus the savings charge.
     function actionRiderPayin(bytes32 _investmentId, uint256 _approvedUSD) external {
         // Get the investment (reverts if it is not registered).
         HInvestment storage investment = getInvestmentStorage(_investmentId);
@@ -679,9 +686,16 @@ contract Henriable is HHelper {
             if (paymentsCompleted) revert HRiderPaymentsCompleted(_investmentId);
         }
 
+        // The rider also pays the asset's fixed per-period extra charge, which is saved
+        // for them (and refunded on ownership transfer), so it is collected on top of the
+        // hire-purchase amount.
+        HAsset storage asset = getAssetStorage(investment.assetId);
+        uint256 riderSavingsAmount = asset.riderSlashableRepayableExtraCharge;
+
         // The payment must meet the minimum for this period, except for the final
         // instalment: when the remaining balance is below the minimum, only the
-        // remaining balance is due and a smaller payment is accepted.
+        // remaining balance is due and a smaller payment is accepted. The per-period
+        // savings charge is always required on top of that.
         {
             uint256 remainingToPay = payinsHistory.targetTotalPay - payinsHistory.totalAmountPaid;
             uint256 requiredThisPayment = investment.minimumRiderPeriodicPayingsUsd;
@@ -690,6 +704,8 @@ contract Henriable is HHelper {
             if (remainingBelowMinimum) {
                 requiredThisPayment = remainingToPay;
             }
+
+            requiredThisPayment += riderSavingsAmount;
 
             bool belowMinimum = _approvedUSD < requiredThisPayment;
             if (belowMinimum) revert HRiderPayinBelowMinimum(_approvedUSD, requiredThisPayment);
@@ -715,13 +731,15 @@ contract Henriable is HHelper {
         investment.riderPayinIndexes.push(riderPayinsList.length);
 
         // Update the rider's payment history and push the next due date by one period.
+        // Only the hire-purchase portion counts toward the target: the savings charge is
+        // set aside for the rider and does not reduce what they still owe.
         payinsHistory.riderAddress = msg.sender;
-        payinsHistory.totalAmountPaid += _approvedUSD;
+        payinsHistory.totalAmountPaid += _approvedUSD - riderSavingsAmount;
         payinsHistory.totalNumberOfTimesPaid += 1;
         investment.riderNextPayinDate += investment.periodicRiderPayingInMinutes * 60;
 
         // Split the payment and record each beneficiary's share.
-        HSharingBreakdown memory breakdown = calcSharingFormula(_approvedUSD);
+        HSharingBreakdown memory breakdown = calcSharingFormula(_approvedUSD, riderSavingsAmount);
         recordDistribution(investment, _investmentId, breakdown);
 
         // Record completion once the rider has paid the target.
@@ -744,11 +762,66 @@ contract Henriable is HHelper {
 
     //<editor-fold desc="Action:Rider: Complete payment">
 
-    /// @notice Transfers the NFT title of a completed hire purchase to the rider.
-    /// @dev    Placeholder: empty stub. To be implemented once the NFT/ownership flow
-    ///         is built (mint title, transfer to rider, mark the investment complete).
-    ///         Parameters are (rider address, investment id) and are intentionally unused.
-    function actionTransferOwnershipToRider(address, bytes32) public {}
+    /// @notice Completes a hire purchase by transferring ownership of the asset to the rider.
+    /// @dev    Only valid once the rider has finished paying. The rider's accumulated savings
+    ///         are refunded to them and cleared, the investment is marked
+    ///         {HInvestmentStatus.Complete}, the completion timestamps are recorded and the
+    ///         investment is appended to the completed lists. It cannot run twice, so the
+    ///         completion side effects happen exactly once.
+    ///         States updated: {HInvestment.riderSavings}, {investmentsList},
+    ///         {completedRiderInvestmentList} and {investmentsCompleted}.
+    /// @param _rider The rider receiving ownership; must be the investment's hired rider.
+    /// @param _investmentId The id of the investment being completed.
+    function actionTransferOwnershipToRider(address _rider, bytes32 _investmentId) public {
+        // Get the investment (reverts if it is not registered).
+        HInvestment storage investment = getInvestmentStorage(_investmentId);
+
+        // Only the hired rider may be handed ownership.
+        {
+            bool notTheHiredRider = _rider != investment.riderWhoHiredIt;
+            if (notTheHiredRider) revert HRiderNotHired(_investmentId, _rider);
+        }
+
+        // The rider must have paid the full target before ownership changes hands.
+        {
+            HPayingHistory storage payinsHistory = investment.riderPayinsHistory;
+            bool riderNotCompleted = payinsHistory.totalAmountPaid < payinsHistory.targetTotalPay;
+            if (riderNotCompleted) revert HRiderPaymentsNotCompleted(_investmentId);
+        }
+
+        // The completion side effects must run exactly once.
+        {
+            HInvestmentStatus[] memory allowedStatuses = new HInvestmentStatus[](1);
+            allowedStatuses[0] = HInvestmentStatus.Complete;
+
+            bool investmentAlreadyComplete = isInvestmentStatus(_investmentId, allowedStatuses);
+            if (investmentAlreadyComplete) revert HInvestmentAlreadyComplete(_investmentId);
+        }
+
+        // Refund the savings the rider accumulated and clear them so they cannot be refunded
+        // twice. The savings were held in the contract, never transferred out.
+        uint256 riderSavingsAmount = investment.riderSavings.totalAmountSaved;
+        investment.riderSavings.totalAmountSaved = 0;
+
+        // Hand over ownership: mark complete and record the times.
+        investment.status = HInvestmentStatus.Complete;
+        investment.timeRiderCompletedPayments = block.timestamp;
+        investment.timeNftTransferedToRider = block.timestamp;
+
+        // Remember the completed investment. Positions are stored as `index + 1` (0 = not
+        // registered), so the 1-based position is what gets appended.
+        uint256 investmentIndexPlusOne = investments[_investmentId];
+        completedRiderInvestmentList.push(investmentIndexPlusOne);
+        investmentsCompleted.push(investmentIndexPlusOne);
+
+        // @todo: mint and transfer the NFT title of the asset to the rider once the NFT
+        //        contract is in place.
+
+        // Interactions: refund the savings last, after every state write.
+        if (riderSavingsAmount != 0) {
+            ownerUsdToken.safeTransfer(_rider, riderSavingsAmount);
+        }
+    }
 
     //</editor-fold desc="Action:Rider: Complete payment">
 

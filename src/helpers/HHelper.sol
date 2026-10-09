@@ -170,6 +170,33 @@ contract HHelper is Ownable {
         return false;
     }
 
+    /// @notice Checks that an asset's pricing settings can pay every investor and still
+    ///         leave the owner a surplus.
+    /// @dev    The investor pools must fund the asset exactly, i.e. every investor's
+    ///         buying price times its slot count must sum to {HAsset.costPrice}, and the
+    ///         rider's {HAsset.sellPrice} must cover that principal plus the profits
+    ///         promised to both pools. The rider's slashable savings
+    ///         ({HAsset.riderSlashableRepayableExtraCharge}) is charged on top of the sell
+    ///         price and refunded later, so it is deliberately excluded here. Whatever is
+    ///         left of the sell price after the investor payouts is the owner's share.
+    /// @param asset The asset configuration to validate.
+    /// @return True when the pools fund the cost price and the sell price covers the
+    ///         investor principal and profits.
+    function isAssetSettingsCorrect(HAsset memory asset) internal pure returns (bool) {
+        uint256 seniorInvestorsBuying = asset.oneSeniorInvestorBuyingPrice * asset.totalNumberOfSeniorInvestorsNeeded;
+        uint256 juniorInvestorsBuying = asset.oneJuniorInvestorBuyingPrice * asset.totalNumberOfJuniorInvestorsNeeded;
+        uint256 investorsBuying = seniorInvestorsBuying + juniorInvestorsBuying;
+
+        uint256 seniorInvestorsProfit = asset.oneSeniorInvestorProfit * asset.totalNumberOfSeniorInvestorsNeeded;
+        uint256 juniorInvestorsProfit = asset.oneJuniorInvestorProfit * asset.totalNumberOfJuniorInvestorsNeeded;
+        uint256 investorsPayout = investorsBuying + seniorInvestorsProfit + juniorInvestorsProfit;
+
+        bool investorsFundCostPrice = investorsBuying == asset.costPrice;
+        bool sellPriceCoversInvestors = asset.sellPrice >= investorsPayout;
+
+        return investorsFundCostPrice && sellPriceCoversInvestors;
+    }
+
     //</editor-fold desc="Is...">
 
     //<editor-fold desc="Calculators">
@@ -186,15 +213,22 @@ contract HHelper is Ownable {
 
     /// @notice Splits one rider periodic payment across the owner, the senior and
     ///         junior investor pools, and the rider's savings.
-    /// @dev    Placeholder: splits the amount into four equal buckets, with the owner
-    ///         absorbing any integer-division remainder. Replace with the real formula.
+    /// @dev    The rider's slashable savings is the fixed per-period extra charge, which is
+    ///         collected on top of the sell price and refunded on ownership transfer, so it
+    ///         is set aside first. The remainder is shared across the owner and the two
+    ///         investor pools, with the owner absorbing any integer-division remainder.
     /// @param amount The rider payment to split, in USDC.
+    /// @param riderSavingsAmount The per-period extra charge set aside for the rider, in USDC.
     /// @return The per-bucket breakdown.
-    function calcSharingFormula(uint256 amount) internal pure returns (HSharingBreakdown memory) {
-        uint256 seniorInvestorsAmount = amount / 4;
-        uint256 juniorInvestorsAmount = amount / 4;
-        uint256 riderSavingsAmount = amount / 4;
-        uint256 ownerAmount = amount - seniorInvestorsAmount - juniorInvestorsAmount - riderSavingsAmount;
+    function calcSharingFormula(uint256 amount, uint256 riderSavingsAmount)
+    internal
+    pure
+    returns (HSharingBreakdown memory)
+    {
+        uint256 distributable = amount - riderSavingsAmount;
+        uint256 seniorInvestorsAmount = distributable / 3;
+        uint256 juniorInvestorsAmount = distributable / 3;
+        uint256 ownerAmount = distributable - seniorInvestorsAmount - juniorInvestorsAmount;
 
         return HSharingBreakdown({
             ownerAmount: ownerAmount,
@@ -1008,7 +1042,7 @@ contract HHelper is Ownable {
 
     /// @notice Returns a completed rider investment index.
     /// @param index The index into {completedRiderInvestmentList}.
-    /// @return An index into {investmentsList}.
+    /// @return The 1-based index into {investmentsList} (subtract 1 to index the array).
     function getCompletedRiderInvestmentAt(uint256 index) external view returns (uint256) {
         return completedRiderInvestmentList[index];
     }
@@ -1021,7 +1055,7 @@ contract HHelper is Ownable {
 
     /// @notice Returns a completed investment index.
     /// @param index The index into {investmentsCompleted}.
-    /// @return An index into {investmentsList}.
+    /// @return The 1-based index into {investmentsList} (subtract 1 to index the array).
     function getInvestmentsCompletedAt(uint256 index) external view returns (uint256) {
         return investmentsCompleted[index];
     }

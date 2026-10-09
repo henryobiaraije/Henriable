@@ -55,6 +55,12 @@ struct HAsset {
     ///         higher risk/reward.
     uint256 oneJuniorInvestorProfit;
 
+    /// @notice At every paying, this amount is charged extra from the rider and saved for the rider.
+    ///         Then on the day of ownership transfer, its refunded to the rider.
+    ///         This would help with repairs and reward for their faithfulness through the process.
+    ///         If they default, these savings could be slashed as penalty and to fund investor payouts.
+    uint256 riderSlashableRepayableExtraCharge;
+
     /// @notice Number of senior investor slots required to fund one unit of this asset.
     /// @dev    Used to know when the senior pool is fully funded.
     uint256 totalNumberOfSeniorInvestorsNeeded;
@@ -446,6 +452,10 @@ error HAssetInvalidSellPrice();
 /// @param id The inactive asset id.
 error HAssetNotActive(bytes32 id);
 
+/// @notice Thrown when an asset's pricing settings cannot cover the payouts it promises,
+///         i.e. the rider's sell price does not cover the investor principal and profits.
+error HAssetInvalidSettings();
+
 /// @notice Thrown when an investment is registered without a non-zero id.
 error HInvestmentInvalidId();
 
@@ -562,6 +572,14 @@ error HRiderNotHired(bytes32 investmentId, address rider);
 /// @notice Thrown when a rider pays after already completing the required total.
 /// @param id The investment id.
 error HRiderPaymentsCompleted(bytes32 id);
+
+/// @notice Thrown when ownership is transferred before the rider has completed all payments.
+/// @param id The investment id.
+error HRiderPaymentsNotCompleted(bytes32 id);
+
+/// @notice Thrown when ownership is transferred for an investment that is already complete.
+/// @param id The investment id.
+error HInvestmentAlreadyComplete(bytes32 id);
 
 /// @notice Thrown when a rider's approved payment is below the minimum periodic payment.
 /// @param provided The approved amount supplied.
