@@ -331,5 +331,27 @@ contract Henriable is HHelper {
 
     //</editor-fold desc="Action:Admin:Investment: Set next investment times">
 
+    //<editor-fold desc="Action:Admin:Investment: Clear next investment times">
+
+    /// @notice Clears the start and end of the next investment round for an investment.
+    /// @dev    Only the contract owner (admin) may call this.
+    ///         The opportunity must still be Pending; both times are reset to 0.
+    ///         States updated: {investmentsList}.
+    /// @param _investmentId The id of the investment whose round is cleared.
+    function actionAdminClearNextInvestmentsTimes(bytes32 _investmentId) external onlyOwner {
+        // Get the modifiable investment (reverts if it is not registered).
+        HInvestment storage investment = getInvestmentStorage(_investmentId);
+
+        // Times may only be cleared while the opportunity is still Pending.
+        bool investmentNotPending = investment.status != HInvestmentStatus.Pending;
+        if (investmentNotPending) revert HInvestmentNotPending(_investmentId);
+
+        // Reset the next investment round window.
+        investment.timeNextInvestmentStart = 0;
+        investment.timeNextInvestmentEnd = 0;
+    }
+
+    //</editor-fold desc="Action:Admin:Investment: Clear next investment times">
+
     //</editor-fold desc="Actions">
 }
