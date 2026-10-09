@@ -17,6 +17,7 @@ HAssetInvalidSellPrice,
 HAssetNotActive,
 HInvestment,
 HInvestmentAlreadyExists,
+HInvestmentHasInvestors,
 HInvestmentInvalidId,
 HInvestmentInvalidJuniorInvestorsNeeded,
 HInvestmentInvalidMinimumRiderPeriodicPayings,
@@ -166,7 +167,7 @@ contract Henriable is HHelper {
     /// @param _totalJuniorInvestorsNeeded Junior investor slots required; must be non-zero.
     /// @param _riderInitialBuyinUsd Initial rider buy-in, in USDC; must be non-zero.
     /// @param _periodicRiderPayingInMinutes Length of a rider period, in minutes; must be non-zero.
-    /// @param _minimumRiderPeriodicPayingUsd Minimum rider payment per period, in USDC; must be non-zero.
+    /// @param _minimumRiderPeriodicPayingsUsd Minimum rider payment per period, in USDC; must be non-zero.
     function actionAdminAddInvestment(
         bytes32 _investmentId,
         bytes32 _assetId,
@@ -261,6 +262,31 @@ contract Henriable is HHelper {
     }
 
     //</editor-fold desc="Action:Admin:Investment: Add investment">
+
+    //<editor-fold desc="Action:Admin:Investment: Change investment status">
+
+    /// @notice Enables or disables an investment opportunity.
+    /// @dev    Only the contract owner (admin) may call this.
+    ///         The investment's active flag may only change while no investor has
+    ///         joined it; once the senior or junior pool has any investor, the
+    ///         opportunity is locked.
+    ///         States updated: {investmentsList}.
+    /// @param _investmentId The id of the investment to update.
+    /// @param _status The new active status.
+    function actionAdminChangeInvestmentStatus(bytes32 _investmentId, bool _status) external onlyOwner {
+        // Get the modifiable investment (reverts if it is not registered).
+        HInvestment storage investment = getInvestmentStorage(_investmentId);
+
+        // The active flag may only change while nobody has invested yet.
+        bool investmentHasInvestors =
+            investment.seniorInvestorsList.length != 0 || investment.juniorInvestorsList.length != 0;
+        if (investmentHasInvestors) revert HInvestmentHasInvestors(_investmentId);
+
+        // Apply the requested status to the investment.
+        investment.active = _status;
+    }
+
+    //</editor-fold desc="Action:Admin:Investment: Change investment status">
 
     //</editor-fold desc="Actions">
 }

@@ -453,8 +453,12 @@ error HInvestmentInvalidPeriodicRiderPayingInMinutes();
 /// @notice Thrown when an investment is registered with a zero minimum rider periodic payment.
 error HInvestmentInvalidMinimumRiderPeriodicPayings();
 
+/// @notice Thrown when an investment's active flag is changed after an investor has joined.
+/// @param id The investment id.
+error HInvestmentHasInvestors(bytes32 id);
+
 /// @notice Thrown when an investment's level-1 settings are not accurate enough to
-///         cover the profits promised to senior and junior investors and owner too.
+///         cover the profits promised to senior and junior investors.
 error HInvestmentInvalidSettings();
 
 //</editor-fold desc="Errors">
