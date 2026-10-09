@@ -248,6 +248,47 @@ contract HHelper is Ownable {
 
     //</editor-fold desc="Maybe">
 
+    //<editor-fold desc="Upserts">
+
+    /// @notice Creates an investor profile for an address, or updates it if it exists.
+    /// @param investorAddress The investor's address.
+    /// @param investorProfile The profile fields (name, country, age) to store.
+    function upsertInvestor(address investorAddress, HInvestor memory investorProfile) internal {
+        bool investorExists = investors[investorAddress] != 0;
+        if (investorExists) {
+            HInvestor storage existingInvestor = getInvestorStorage(investorAddress);
+            existingInvestor.name = investorProfile.name;
+            existingInvestor.country = investorProfile.country;
+            existingInvestor.age = investorProfile.age;
+        } else {
+            investorProfile.investorAddress = investorAddress;
+            investorsList.push(investorProfile);
+            investors[investorAddress] = investorsList.length;
+        }
+    }
+
+    /// @notice Creates a rider profile for an address, or updates it if it exists.
+    /// @param riderAddress The rider's address.
+    /// @param riderName The rider's name.
+    /// @param riderCountry The rider's country.
+    /// @param riderAge The rider's age.
+    function upsertRider(address riderAddress, bytes32 riderName, bytes32 riderCountry, uint8 riderAge) internal {
+        bool riderExists = riders[riderAddress] != 0;
+        if (riderExists) {
+            HRider storage existingRider = getRiderStorage(riderAddress);
+            existingRider.name = riderName;
+            existingRider.country = riderCountry;
+            existingRider.age = riderAge;
+        } else {
+            HRider memory newRider =
+                HRider({riderAddress: riderAddress, name: riderName, country: riderCountry, age: riderAge});
+            ridersList.push(newRider);
+            riders[riderAddress] = ridersList.length;
+        }
+    }
+
+    //</editor-fold desc="Upserts">
+
     //<editor-fold desc="Getters">
 
     // ------------------------- Asset getters -------------------------
