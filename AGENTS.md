@@ -4,12 +4,13 @@ Conventions and context for the Henriable Solidity codebase. Follow these every 
 
 ## Source of truth and workflow
 
-- The product/spec document is `Henriable.md`. Implement it one item at a time, in the
-  order the user asks, and let the user review each piece before moving on.
-- `Henriable.md` is an initial draft. Normalize snake_case to camelCase
-  (e.g. `cost_price` -> `costPrice`), fix obvious typos, and treat the "Avoid" examples
-  below as authoritative style. Surface deviations and ambiguities instead of guessing
-  silently.
+- The code is the source of truth as the project is built; `Henriable.md` is an early
+  draft and is NOT kept in sync (do not edit it or propose doc edits unless the user asks).
+  Implement one item at a time, in the order the user asks, and let the user review each
+  piece before moving on.
+- When reading `Henriable.md`, normalize snake_case to camelCase (e.g. `cost_price` ->
+  `costPrice`) and treat the "Avoid" examples below as authoritative style. Surface
+  deviations and ambiguities instead of guessing silently.
 - Preserve the author's whitespace in `Henriable.md` exactly: keep the blank lines and the
   trailing two-space markdown line breaks they use for readability. When editing that
   document, never strip, trim, or reflow that spacing — a tool that rewrites the file must
