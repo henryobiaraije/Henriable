@@ -6,6 +6,7 @@ pragma solidity ^0.8.13;
 
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {
 HAsset,
 HAssetAlreadyExists,
@@ -18,17 +19,23 @@ HAssetNotActive,
 HInvestment,
 HInvestmentAlreadyExists,
 HInvestmentHasInvestors,
+HInvestmentInvalidAmount,
 HInvestmentInvalidEndTime,
 HInvestmentInvalidId,
-HInvestmentInvalidJuniorInvestorsNeeded,
 HInvestmentInvalidMinimumRiderPeriodicPayings,
 HInvestmentInvalidPeriodicRiderPayingInMinutes,
 HInvestmentInvalidRiderInitialBuyin,
-HInvestmentInvalidSeniorInvestorsNeeded,
 HInvestmentInvalidSettings,
 HInvestmentInvalidStartTime,
+HInvestmentNoOpenSlot,
+HInvestmentNotAccepting,
+HInvestmentNotActive,
 HInvestmentNotPending,
-HInvestmentStatus
+HInvestmentStatus,
+HInvestmentType,
+HInvestor,
+HInvestorAlreadyInvested,
+HInvestorInvalidAge
 } from "./types/common.sol";
 import {HHelper} from "./helpers/HHelper.sol";
 //</editor-fold desc="Imports">
@@ -36,6 +43,9 @@ import {HHelper} from "./helpers/HHelper.sol";
 /// @title The Henriable contract.
 /// @author Obiaraije Henry
 contract Henriable is HHelper {
+
+    // Provides safeTransferFrom, which reverts on failure.
+    using SafeERC20 for IERC20;
 
     //<editor-fold desc="Constructor">
 
@@ -82,6 +92,8 @@ contract Henriable is HHelper {
 
         bool sellPriceMissing = _asset.sellPrice == 0;
         if (sellPriceMissing) revert HAssetInvalidSellPrice();
+
+        // @todo: Add calc... to calculate that the pricing tally, e.g. that selling price would be nough to pay all investors and owner too.
 
         //</editor-fold desc="Verify Parameters">
 
@@ -164,16 +176,12 @@ contract Henriable is HHelper {
     ///         States updated: {investmentsList}, {investments}, {assetInvestments}.
     /// @param _investmentId Unique, non-zero id of the new investment slot.
     /// @param _assetId Id of the asset to invest in; must exist and be active.
-    /// @param _totalSeniorInvestorsNeeded Senior investor slots required; must be non-zero.
-    /// @param _totalJuniorInvestorsNeeded Junior investor slots required; must be non-zero.
     /// @param _riderInitialBuyinUsd Initial rider buy-in, in USDC; must be non-zero.
     /// @param _periodicRiderPayingInMinutes Length of a rider period, in minutes; must be non-zero.
     /// @param _minimumRiderPeriodicPayingsUsd Minimum rider payment per period, in USDC; must be non-zero.
     function actionAdminAddInvestment(
         bytes32 _investmentId,
         bytes32 _assetId,
-        uint256 _totalSeniorInvestorsNeeded,
-        uint256 _totalJuniorInvestorsNeeded,
         uint256 _riderInitialBuyinUsd,
         uint256 _periodicRiderPayingInMinutes,
         uint256 _minimumRiderPeriodicPayingsUsd
@@ -203,17 +211,6 @@ contract Henriable is HHelper {
             if (assetNotActive) revert HAssetNotActive(_assetId);
         }
 
-        // Both investor tiers need at least one slot to be fundable.
-        {
-            bool seniorInvestorsNeededMissing = _totalSeniorInvestorsNeeded == 0;
-            if (seniorInvestorsNeededMissing) revert HInvestmentInvalidSeniorInvestorsNeeded();
-        }
-
-        {
-            bool juniorInvestorsNeededMissing = _totalJuniorInvestorsNeeded == 0;
-            if (juniorInvestorsNeededMissing) revert HInvestmentInvalidJuniorInvestorsNeeded();
-        }
-
         // The rider economics must be non-zero so the hire purchase can start and pay out.
         {
             bool riderInitialBuyinMissing = _riderInitialBuyinUsd == 0;
@@ -238,8 +235,6 @@ contract Henriable is HHelper {
 
         newInvestment.investmentId = _investmentId;
         newInvestment.assetId = _assetId;
-        newInvestment.totalSeniorInvestorsNeeded = _totalSeniorInvestorsNeeded;
-        newInvestment.totalJuniorInvestorsNeeded = _totalJuniorInvestorsNeeded;
         newInvestment.riderInitialBuyinUsd = _riderInitialBuyinUsd;
         newInvestment.periodicRiderPayingInMinutes = _periodicRiderPayingInMinutes;
         newInvestment.minimumRiderPeriodicPayingsUsd = _minimumRiderPeriodicPayingsUsd;
@@ -307,7 +302,10 @@ contract Henriable is HHelper {
         HInvestment storage investment = getInvestmentStorage(_investmentId);
 
         // Times may only be set while the opportunity is still Pending.
-        bool investmentNotPending = investment.status != HInvestmentStatus.Pending;
+        HInvestmentStatus[] memory allowedStatuses = new HInvestmentStatus[](1);
+        allowedStatuses[0] = HInvestmentStatus.Pending;
+
+        bool investmentNotPending = !isInvestmentStatus(_investmentId, allowedStatuses);
         if (investmentNotPending) revert HInvestmentNotPending(_investmentId);
 
         // The backing asset must still be active, i.e. there must be an asset to invest in.
@@ -343,7 +341,10 @@ contract Henriable is HHelper {
         HInvestment storage investment = getInvestmentStorage(_investmentId);
 
         // Times may only be cleared while the opportunity is still Pending.
-        bool investmentNotPending = investment.status != HInvestmentStatus.Pending;
+        HInvestmentStatus[] memory allowedStatuses = new HInvestmentStatus[](1);
+        allowedStatuses[0] = HInvestmentStatus.Pending;
+
+        bool investmentNotPending = !isInvestmentStatus(_investmentId, allowedStatuses);
         if (investmentNotPending) revert HInvestmentNotPending(_investmentId);
 
         // Reset the next investment round window.
@@ -352,6 +353,123 @@ contract Henriable is HHelper {
     }
 
     //</editor-fold desc="Action:Admin:Investment: Clear next investment times">
+
+    //<editor-fold desc="Action:Investor: Invest">
+
+    /// @notice Lets an address invest into a tier of an active investment opportunity.
+    /// @dev    The investor is {msg.sender}; `_investor` only supplies name, country
+    ///         and age. The asset defines the per-investor buying price and the number
+    ///         of slots, so the required amount is the tier's one-investor buying price.
+    ///         The contract pulls exactly that amount from the investor's USDC.
+    ///         States updated: {investorsList}, {investors}, and the chosen tier's
+    ///         list and mapping inside {investmentsList}.
+    /// @param _investor The investor profile (name, country, age) to create or update.
+    /// @param _investmentType The tier to invest in (Senior or Junior).
+    /// @param _investmentId The id of the investment to invest in.
+    /// @param _approvedUSDAmount The USDC amount approved for this slot; must equal the slot amount.
+    function actionInvest(
+        HInvestor calldata _investor,
+        HInvestmentType _investmentType,
+        bytes32 _investmentId,
+        uint256 _approvedUSDAmount
+    ) external {
+        // Let the status helper advance the opportunity if it is due.
+        maybeUpdateInvestmentStatus(_investmentId);
+
+        // Get the investment (reverts if it is not registered).
+        HInvestment storage investment = getInvestmentStorage(_investmentId);
+
+        // The opportunity must be opening for investments and still active.
+        {
+            HInvestmentStatus[] memory allowedStatuses = new HInvestmentStatus[](1);
+            allowedStatuses[0] = HInvestmentStatus.AcceptingInvestments;
+
+            bool investmentNotAccepting = !isInvestmentStatus(_investmentId, allowedStatuses);
+            if (investmentNotAccepting) revert HInvestmentNotAccepting(_investmentId);
+        }
+
+        {
+            bool investmentNotActive = !investment.active;
+            if (investmentNotActive) revert HInvestmentNotActive(_investmentId);
+        }
+
+        // The investor must be an adult.
+        {
+            bool investorTooYoung = _investor.age < 18;
+            if (investorTooYoung) revert HInvestorInvalidAge(_investor.age);
+        }
+
+        // The asset defines the tier's slots and buying prices.
+        HAsset storage asset = getAssetStorage(investment.assetId);
+
+        // Select the tier being invested in.
+        mapping(address => uint256) storage theInvestors = _investmentType == HInvestmentType.Senior
+            ? investment.seniorInvestors
+            : investment.juniorInvestors;
+
+        address[] storage theInvestorsList = _investmentType == HInvestmentType.Senior
+            ? investment.seniorInvestorsList
+            : investment.juniorInvestorsList;
+
+        uint256 theInvestorBuyingPrice = _investmentType == HInvestmentType.Senior
+            ? asset.oneSeniorInvestorBuyingPrice
+            : asset.oneJuniorInvestorBuyingPrice;
+
+        uint256 theInvestorSlotsNeeded = _investmentType == HInvestmentType.Senior
+            ? asset.totalNumberOfSeniorInvestorsNeeded
+            : asset.totalNumberOfJuniorInvestorsNeeded;
+
+        // An address may take at most one slot per tier.
+        {
+            bool investorAlreadyInvested = theInvestors[msg.sender] != 0;
+            if (investorAlreadyInvested) revert HInvestorAlreadyInvested(_investmentId, msg.sender);
+        }
+
+        // There must still be an open slot (also guards against a zero-slot asset).
+        {
+            bool noOpenSlot = theInvestorsList.length >= theInvestorSlotsNeeded;
+            if (noOpenSlot) revert HInvestmentNoOpenSlot(_investmentId);
+        }
+
+        // The approved amount must equal the per-investor amount.
+        uint256 requiredAmount = theInvestorBuyingPrice;
+        {
+            bool amountIncorrect = _approvedUSDAmount != requiredAmount;
+            if (amountIncorrect) revert HInvestmentInvalidAmount(_approvedUSDAmount, requiredAmount);
+        }
+
+        // Create or update the caller's investor profile.
+        upsertInvestor(msg.sender, _investor);
+
+        // Record the slot in the chosen tier.
+        theInvestorsList.push(msg.sender);
+        theInvestors[msg.sender] = theInvestorsList.length;
+
+        // Let the status helper react (e.g. mark the opportunity done once full).
+        maybeUpdateInvestmentStatus(_investmentId);
+
+        // Pull the USDC from the investor into the contract (reverts on failure).
+        ownerUsdToken.safeTransferFrom(msg.sender, address(this), requiredAmount);
+    }
+
+    /// @notice Creates an investor profile for an address, or updates it if it exists.
+    /// @param investorAddress The investor's address.
+    /// @param investorProfile The profile fields (name, country, age) to store.
+    function upsertInvestor(address investorAddress, HInvestor memory investorProfile) internal {
+        bool investorExists = investors[investorAddress] != 0;
+        if (investorExists) {
+            HInvestor storage existingInvestor = getInvestorStorage(investorAddress);
+            existingInvestor.name = investorProfile.name;
+            existingInvestor.country = investorProfile.country;
+            existingInvestor.age = investorProfile.age;
+        } else {
+            investorProfile.investorAddress = investorAddress;
+            investorsList.push(investorProfile);
+            investors[investorAddress] = investorsList.length;
+        }
+    }
+
+    //</editor-fold desc="Action:Investor: Invest">
 
     //</editor-fold desc="Actions">
 }

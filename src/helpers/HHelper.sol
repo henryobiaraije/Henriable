@@ -14,6 +14,7 @@ HInvestment,
 HInvestmentDoesNotExist,
 HInvestmentStatus,
 HInvestor,
+HInvestorDoesNotExist,
 HRider,
 HRiderHirePurchaseRequest,
 HRiderPayin,
@@ -91,7 +92,8 @@ contract HHelper is Ownable {
 
     //<editor-fold desc="State: Investors">
 
-    /// @notice Maps an investor address to its index in {investorsList}.
+    /// @notice Maps an investor address to its index in {investorsList}, stored as
+    ///         `index + 1`, so 0 means "not registered".
     mapping(address => uint256) internal investors;
 
     /// @notice All investor payouts ever made.
@@ -179,6 +181,18 @@ contract HHelper is Ownable {
     }
 
     //</editor-fold desc="Calculators">
+
+    //<editor-fold desc="Maybe">
+
+    /// @notice Advances an investment's lifecycle status when its current state and
+    ///         timing allow it.
+    /// @dev    Placeholder: currently a no-op stub. Once implemented, this is the sole
+    ///         place that mutates {HInvestment}.status (e.g. Pending -> AcceptingInvestments
+    ///         when the round window opens, and -> InvestmentDone when the slots fill).
+    ///         The investment id parameter is intentionally unused for now.
+    function maybeUpdateInvestmentStatus(bytes32) internal pure {}
+
+    //</editor-fold desc="Maybe">
 
     //<editor-fold desc="Getters">
 
@@ -292,8 +306,6 @@ contract HHelper is Ownable {
     /// @return investmentId Unique investment id.
     /// @return active Whether the opportunity is active.
     /// @return assetId Asset being invested in.
-    /// @return totalSeniorInvestorsNeeded Senior slots required.
-    /// @return totalJuniorInvestorsNeeded Junior slots required.
     /// @return investmentsDoneAt Time the funding target was reached.
     /// @return riderInitialBuyinUsd Initial rider buy-in, in USDC.
     /// @return periodicRiderPayingInMinutes Length of a rider period, in minutes.
@@ -306,8 +318,6 @@ contract HHelper is Ownable {
         bytes32 investmentId,
         bool active,
         bytes32 assetId,
-        uint256 totalSeniorInvestorsNeeded,
-        uint256 totalJuniorInvestorsNeeded,
         uint256 investmentsDoneAt,
         uint256 riderInitialBuyinUsd,
         uint256 periodicRiderPayingInMinutes,
@@ -319,8 +329,6 @@ contract HHelper is Ownable {
         investmentId = inv.investmentId;
         active = inv.active;
         assetId = inv.assetId;
-        totalSeniorInvestorsNeeded = inv.totalSeniorInvestorsNeeded;
-        totalJuniorInvestorsNeeded = inv.totalJuniorInvestorsNeeded;
         investmentsDoneAt = inv.investmentsDoneAt;
         riderInitialBuyinUsd = inv.riderInitialBuyinUsd;
         periodicRiderPayingInMinutes = inv.periodicRiderPayingInMinutes;
@@ -503,10 +511,30 @@ contract HHelper is Ownable {
     }
 
     /// @notice Returns an investor's index in {investorsList}.
+    /// @dev    Reverts if the investor is not registered.
     /// @param investor The investor address.
     /// @return The index in {investorsList}.
     function getInvestorIndex(address investor) external view returns (uint256) {
-        return investors[investor];
+        uint256 indexPlusOne = investors[investor];
+
+        bool investorDoesNotExist = indexPlusOne == 0;
+        if (investorDoesNotExist) revert HInvestorDoesNotExist(investor);
+
+        return indexPlusOne - 1;
+    }
+
+    /// @notice Returns a storage reference to a registered investor.
+    /// @dev    Hides the `index + 1` bookkeeping so callers can read or write fields
+    ///         directly. Reverts if the investor is not registered.
+    /// @param investor The investor address.
+    /// @return A storage reference to the investor.
+    function getInvestorStorage(address investor) internal view returns (HInvestor storage) {
+        uint256 indexPlusOne = investors[investor];
+
+        bool investorDoesNotExist = indexPlusOne == 0;
+        if (investorDoesNotExist) revert HInvestorDoesNotExist(investor);
+
+        return investorsList[indexPlusOne - 1];
     }
 
     /// @notice Returns the investor registered at an index.
@@ -520,7 +548,15 @@ contract HHelper is Ownable {
     /// @param investor The investor address.
     /// @return The {HInvestor} for the address (zero-filled if not registered).
     function getInvestor(address investor) external view returns (HInvestor memory) {
-        return investorsList[investors[investor]];
+        uint256 indexPlusOne = investors[investor];
+
+        bool investorDoesNotExist = indexPlusOne == 0;
+        if (investorDoesNotExist) {
+            HInvestor memory notFound;
+            return notFound;
+        }
+
+        return investorsList[indexPlusOne - 1];
     }
 
     // ------------------------- Rider getters -------------------------

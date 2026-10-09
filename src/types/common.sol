@@ -38,22 +38,22 @@ struct HAsset {
     ///         promised to both the senior and junior investor pools.
     uint256 sellPrice;
 
-    /// @notice Total senior investment to be raised for one unit of this asset, in USDC.
-    /// @dev    Sum of the buying price contributed by all senior investors.
-    uint256 seniorInvestorBuyingPrice;
+    /// @notice Buying price contributed by one senior investor, in USDC.
+    /// @dev    The senior pool total is this times {totalNumberOfSeniorInvestorsNeeded}.
+    uint256 oneSeniorInvestorBuyingPrice;
 
-    /// @notice Total profit the senior investor pool earns over time, in USDC.
+    /// @notice Profit one senior investor earns over time, in USDC.
     /// @dev    Senior investors are paid first and carry the lowest risk/reward.
-    uint256 seniorInvestorProfit;
+    uint256 oneSeniorInvestorProfit;
 
-    /// @notice Total junior investment to be raised for one unit of this asset, in USDC.
-    /// @dev    Sum of the buying price contributed by all junior investors.
-    uint256 juniorInvestorBuyingPrice;
+    /// @notice Buying price contributed by one junior investor, in USDC.
+    /// @dev    The junior pool total is this times {totalNumberOfJuniorInvestorsNeeded}.
+    uint256 oneJuniorInvestorBuyingPrice;
 
-    /// @notice Total profit the junior investor pool earns over time, in USDC.
+    /// @notice Profit one junior investor earns over time, in USDC.
     /// @dev    Junior investors are paid after senior investors and carry the
     ///         higher risk/reward.
-    uint256 juniorInvestorProfit;
+    uint256 oneJuniorInvestorProfit;
 
     /// @notice Number of senior investor slots required to fund one unit of this asset.
     /// @dev    Used to know when the senior pool is fully funded.
@@ -77,12 +77,6 @@ struct HInvestment {
 
     /// @notice Identifier of the {HAsset} this opportunity invests in.
     bytes32 assetId;
-
-    /// @notice Number of senior investor slots that must be filled.
-    uint256 totalSeniorInvestorsNeeded;
-
-    /// @notice Number of junior investor slots that must be filled.
-    uint256 totalJuniorInvestorsNeeded;
 
     /// @notice Initial buy-in a rider must pay to start the hire purchase, in USDC.
     uint256 riderInitialBuyinUsd;
@@ -438,12 +432,6 @@ error HInvestmentAlreadyExists(bytes32 id);
 /// @param id The unknown investment id.
 error HInvestmentDoesNotExist(bytes32 id);
 
-/// @notice Thrown when an investment is registered with zero senior investor slots.
-error HInvestmentInvalidSeniorInvestorsNeeded();
-
-/// @notice Thrown when an investment is registered with zero junior investor slots.
-error HInvestmentInvalidJuniorInvestorsNeeded();
-
 /// @notice Thrown when an investment is registered with a zero rider initial buy-in.
 error HInvestmentInvalidRiderInitialBuyin();
 
@@ -473,6 +461,36 @@ error HInvestmentInvalidStartTime(uint256 startTime);
 /// @param startTime The proposed start timestamp.
 /// @param endTime The invalid end timestamp.
 error HInvestmentInvalidEndTime(uint256 startTime, uint256 endTime);
+
+/// @notice Thrown when investing in an investment that is not active.
+/// @param id The investment id.
+error HInvestmentNotActive(bytes32 id);
+
+/// @notice Thrown when investing in an investment that is not accepting investments.
+/// @param id The investment id.
+error HInvestmentNotAccepting(bytes32 id);
+
+/// @notice Thrown when the approved USDC amount does not match the required slot amount.
+/// @param provided The approved amount supplied.
+/// @param required The required per-slot amount.
+error HInvestmentInvalidAmount(uint256 provided, uint256 required);
+
+/// @notice Thrown when investing in a tier whose investor slots are all filled.
+/// @param id The investment id.
+error HInvestmentNoOpenSlot(bytes32 id);
+
+/// @notice Thrown when an operation references an investor that is not registered.
+/// @param investor The unknown investor address.
+error HInvestorDoesNotExist(address investor);
+
+/// @notice Thrown when an investor tries to take a second slot in the same tier.
+/// @param investmentId The investment id.
+/// @param investor The investor address.
+error HInvestorAlreadyInvested(bytes32 investmentId, address investor);
+
+/// @notice Thrown when an investor is younger than the required minimum age.
+/// @param age The supplied age.
+error HInvestorInvalidAge(uint8 age);
 
 //</editor-fold desc="Errors">
 
