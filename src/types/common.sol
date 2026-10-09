@@ -149,6 +149,10 @@ struct HInvestment {
     /// @notice Aggregate record of the rider's payments toward this investment.
     HPayingHistory riderPayinsHistory;
 
+    /// @notice Indices (into the global rider payins list) of this investment's payments,
+    ///         stored as `index + 1`.
+    uint256[] riderPayinIndexes;
+
     /// @notice Record of savings accumulated from the rider's payments (slashable).
     HRiderSavingsHistory riderSavings;
 
@@ -236,6 +240,23 @@ struct HRiderPayin {
 
     /// @notice Address the payment was transferred into.
     address addressPaidInto;
+}
+
+/// @title HSharingBreakdown
+/// @notice Split of one rider periodic payment across its beneficiaries.
+/// @dev    Returned by the sharing calculator; the caller credits each party.
+struct HSharingBreakdown {
+    /// @notice Amount credited to the contract owner, in USDC.
+    uint256 ownerAmount;
+
+    /// @notice Total amount credited to the senior investor pool, in USDC.
+    uint256 seniorInvestorsAmount;
+
+    /// @notice Total amount credited to the junior investor pool, in USDC.
+    uint256 juniorInvestorsAmount;
+
+    /// @notice Amount credited to the rider's savings, in USDC.
+    uint256 riderSavingsAmount;
 }
 
 /// @title HPayingHistory
@@ -528,6 +549,28 @@ error HRiderAlreadyRegistered(bytes32 investmentId, address rider);
 /// @notice Thrown when an operation references a rider that is not registered.
 /// @param rider The unknown rider address.
 error HRiderDoesNotExist(address rider);
+
+/// @notice Thrown when a rider pays on an investment whose hire purchase is not running.
+/// @param id The investment id.
+error HInvestmentNotHired(bytes32 id);
+
+/// @notice Thrown when an address that is not the hired rider tries to pay.
+/// @param investmentId The investment id.
+/// @param rider The caller address.
+error HRiderNotHired(bytes32 investmentId, address rider);
+
+/// @notice Thrown when a rider pays after already completing the required total.
+/// @param id The investment id.
+error HRiderPaymentsCompleted(bytes32 id);
+
+/// @notice Thrown when a rider's approved payment is below the minimum periodic payment.
+/// @param provided The approved amount supplied.
+/// @param required The required minimum periodic payment.
+error HRiderPayinBelowMinimum(uint256 provided, uint256 required);
+
+/// @notice Thrown when a rider pays after the due date ({HInvestment.riderNextPayinDate}).
+/// @param id The investment id.
+error HRiderPayinLate(bytes32 id);
 
 //</editor-fold desc="Errors">
 

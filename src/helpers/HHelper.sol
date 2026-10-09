@@ -7,6 +7,7 @@ pragma solidity ^0.8.13;
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {
 HAsset,
 HAssetDoesNotExist,
@@ -19,13 +20,15 @@ HRider,
 HRiderDoesNotExist,
 HRiderHirePurchaseRequest,
 HRiderPayin,
+HRiderSavings,
 HPayingHistory,
 HOwnerPayout,
 HOwnerPayoutsHistory,
 HInvestorPayout,
 HInvestorPayoutsHistory,
 HInvestmentPayoutsHistory,
-HRiderSavingsHistory
+HRiderSavingsHistory,
+HSharingBreakdown
 } from "../types/common.sol";
 //</editor-fold desc="Imports">
 
@@ -33,6 +36,9 @@ HRiderSavingsHistory
 /// @author Obiaraije Henry
 /// @dev Inherits OpenZeppelin {Ownable} so the launch owner is set at construction.
 contract HHelper is Ownable {
+
+    // Provides safeTransfer/safeTransferFrom, which revert on failure.
+    using SafeERC20 for IERC20;
 
     //<editor-fold desc="States">
 
@@ -129,10 +135,6 @@ contract HHelper is Ownable {
     /// @notice All rider periodic payments ever made.
     HRiderPayin[] internal riderPayinsList;
 
-    /// @notice Maps a rider address and investment id to the index (in
-    ///         {riderPayinsList}) of the rider's payment.
-    mapping(address => mapping(bytes32 => uint256)) internal riderPayins;
-
     //</editor-fold desc="State: Riders">
 
     //</editor-fold desc="States">
@@ -155,9 +157,9 @@ contract HHelper is Ownable {
     /// @param statuses The statuses to test for.
     /// @return True if the investment's current status equals any entry in `statuses`.
     function isInvestmentStatus(bytes32 investmentId, HInvestmentStatus[] memory statuses)
-        internal
-        view
-        returns (bool)
+    internal
+    view
+    returns (bool)
     {
         HInvestmentStatus currentStatus = getInvestmentStorage(investmentId).status;
         for (uint256 i = 0; i < statuses.length; i++) {
@@ -180,6 +182,26 @@ contract HHelper is Ownable {
     /// @return True when the level-1 settings are accurate.
     function calcInvestmentOpportunityLevel1SettingsAccuracy(HInvestment storage) internal pure returns (bool) {
         return true;
+    }
+
+    /// @notice Splits one rider periodic payment across the owner, the senior and
+    ///         junior investor pools, and the rider's savings.
+    /// @dev    Placeholder: splits the amount into four equal buckets, with the owner
+    ///         absorbing any integer-division remainder. Replace with the real formula.
+    /// @param amount The rider payment to split, in USDC.
+    /// @return The per-bucket breakdown.
+    function calcSharingFormula(uint256 amount) internal pure returns (HSharingBreakdown memory) {
+        uint256 seniorInvestorsAmount = amount / 4;
+        uint256 juniorInvestorsAmount = amount / 4;
+        uint256 riderSavingsAmount = amount / 4;
+        uint256 ownerAmount = amount - seniorInvestorsAmount - juniorInvestorsAmount - riderSavingsAmount;
+
+        return HSharingBreakdown({
+            ownerAmount: ownerAmount,
+            seniorInvestorsAmount: seniorInvestorsAmount,
+            juniorInvestorsAmount: juniorInvestorsAmount,
+            riderSavingsAmount: riderSavingsAmount
+        });
     }
 
     //</editor-fold desc="Calculators">
@@ -281,13 +303,139 @@ contract HHelper is Ownable {
             existingRider.age = riderAge;
         } else {
             HRider memory newRider =
-                HRider({riderAddress: riderAddress, name: riderName, country: riderCountry, age: riderAge});
+                            HRider({riderAddress: riderAddress, name: riderName, country: riderCountry, age: riderAge});
             ridersList.push(newRider);
             riders[riderAddress] = ridersList.length;
         }
     }
 
     //</editor-fold desc="Upserts">
+
+    //<editor-fold desc="Distributions">
+
+    /// @notice Records the accounting for one rider payment split across its beneficiaries.
+    /// @dev    Writes all payout/savings state and moves no tokens, so the caller can keep
+    ///         the transfer step last (checks-effects-interactions). The owner and each
+    ///         investor in a tier share their pool equally; an empty tier or any division
+    ///         remainder stays in the contract.
+    /// @param investment The investment the payment belongs to (storage reference).
+    /// @param investmentId The id of the investment.
+    /// @param breakdown The owner/investor/savings split of the payment.
+    function recordDistribution(HInvestment storage investment, bytes32 investmentId, HSharingBreakdown memory breakdown)
+        internal
+    {
+        // Owner accounting.
+        if (breakdown.ownerAmount != 0) {
+            ownerPayoutsList.push(
+                HOwnerPayout({
+                    investmentId: investmentId,
+                    amountPaid: breakdown.ownerAmount,
+                    timePaid: block.timestamp,
+                    addressPaidInto: owner()
+                })
+            );
+            ownerPayouts[investmentId] = ownerPayoutsList.length;
+
+            HOwnerPayoutsHistory storage ownerHistory = ownerPayoutHistory[investmentId];
+            ownerHistory.totalAmountPaid += breakdown.ownerAmount;
+            ownerHistory.totalNumberOfTimesPaid += 1;
+        }
+
+        // Per-investor accounting for each tier.
+        recordTierPayouts(investment, investmentId, investment.seniorInvestorsList, breakdown.seniorInvestorsAmount);
+        recordTierPayouts(investment, investmentId, investment.juniorInvestorsList, breakdown.juniorInvestorsAmount);
+
+        // Rider savings (held in the contract, not transferred).
+        if (breakdown.riderSavingsAmount != 0) {
+            HRiderSavingsHistory storage savings = investment.riderSavings;
+            savings.riderAddress = investment.riderWhoHiredIt;
+            savings.totalAmountSaved += breakdown.riderSavingsAmount;
+            savings.savings.push(
+                HRiderSavings({
+                    riderAddress: investment.riderWhoHiredIt,
+                    amountSaved: breakdown.riderSavingsAmount,
+                    timeSaved: block.timestamp
+                })
+            );
+        }
+
+        // Aggregate investment accounting (excludes rider savings).
+        HInvestmentPayoutsHistory storage investmentHistory = investment.investmentPayoutHistory;
+        investmentHistory.investmentId = investmentId;
+        investmentHistory.totalAmountPaid +=
+            breakdown.ownerAmount + breakdown.seniorInvestorsAmount + breakdown.juniorInvestorsAmount;
+        investmentHistory.totalNumberOfTimesPaid += 1;
+    }
+
+    /// @notice Records an equal-share payout for every investor in a tier.
+    /// @param investment The investment the payment belongs to (storage reference).
+    /// @param investmentId The id of the investment.
+    /// @param tierInvestors The tier's investor list.
+    /// @param poolAmount The total amount to split across the tier, in USDC.
+    function recordTierPayouts(
+        HInvestment storage investment,
+        bytes32 investmentId,
+        address[] storage tierInvestors,
+        uint256 poolAmount
+    ) internal {
+        uint256 investorsCount = tierInvestors.length;
+        if (investorsCount == 0 || poolAmount == 0) {
+            return;
+        }
+
+        uint256 amountPerInvestor = poolAmount / investorsCount;
+
+        for (uint256 i = 0; i < investorsCount; i++) {
+            address investor = tierInvestors[i];
+
+            investorPayoutList.push(
+                HInvestorPayout({
+                    investmentId: investmentId,
+                    amountPaid: amountPerInvestor,
+                    timePaid: block.timestamp,
+                    addressPaidInto: investor
+                })
+            );
+            investorPayouts[investor][investmentId] = investorPayoutList.length;
+
+            HInvestorPayoutsHistory storage investorHistory = investment.investorPayoutHistory[investor];
+            investorHistory.investorAddress = investor;
+            investorHistory.investmentId = investmentId;
+            investorHistory.totalAmountPaid += amountPerInvestor;
+            investorHistory.totalNumberOfTimesPaid += 1;
+        }
+    }
+
+    /// @notice Transfers the owner and investor shares of a recorded distribution.
+    /// @dev    Call only after {recordDistribution}: this is the token-moving step.
+    /// @param investment The investment the payment belongs to (storage reference).
+    /// @param breakdown The owner/investor/savings split of the payment.
+    function transferDistribution(HInvestment storage investment, HSharingBreakdown memory breakdown) internal {
+        if (breakdown.ownerAmount != 0) {
+            ownerUsdToken.safeTransfer(owner(), breakdown.ownerAmount);
+        }
+
+        transferTierShares(investment.seniorInvestorsList, breakdown.seniorInvestorsAmount);
+        transferTierShares(investment.juniorInvestorsList, breakdown.juniorInvestorsAmount);
+    }
+
+    /// @notice Transfers an equal share of a tier's pool to each of its investors.
+    /// @param tierInvestors The tier's investor list.
+    /// @param poolAmount The total amount to split across the tier, in USDC.
+    function transferTierShares(address[] storage tierInvestors, uint256 poolAmount) internal {
+        uint256 investorsCount = tierInvestors.length;
+        if (investorsCount == 0 || poolAmount == 0) {
+            return;
+        }
+
+        uint256 amountPerInvestor = poolAmount / investorsCount;
+
+        for (uint256 i = 0; i < investorsCount; i++) {
+            ownerUsdToken.safeTransfer(tierInvestors[i], amountPerInvestor);
+        }
+    }
+
+    //</editor-fold desc="Distributions">
 
     //<editor-fold desc="Getters">
 
@@ -783,16 +931,11 @@ contract HHelper is Ownable {
         return riderPayinsList[index];
     }
 
-    /// @notice Returns a rider's payment index for an investment.
-    /// @param rider The rider address.
+    /// @notice Returns the payment indices recorded on an investment.
     /// @param investmentId The id of the investment.
-    /// @return The index into {riderPayinsList}.
-    function getRiderPayinIndex(address rider, bytes32 investmentId)
-    external
-    view
-    returns (uint256)
-    {
-        return riderPayins[rider][investmentId];
+    /// @return The 1-based indices into the global rider payins list.
+    function getRiderPayinIndexes(bytes32 investmentId) external view returns (uint256[] memory) {
+        return getInvestmentStorage(investmentId).riderPayinIndexes;
     }
 
     // --------------------- Investor payout getters -------------------

@@ -32,18 +32,26 @@ HInvestmentNotAccepting,
 HInvestmentNotAcceptingRiders,
 HInvestmentNotActive,
 HInvestmentNotDone,
+HInvestmentNotHired,
 HInvestmentNotPending,
 HInvestmentStatus,
 HInvestmentType,
 HInvestor,
 HInvestorAlreadyInvested,
 HInvestorInvalidAge,
+HPayingHistory,
 HRiderAlreadyRegistered,
 HRiderHirePurchaseRequest,
 HRiderInsufficientInitialBuyin,
 HRiderInvalidAge,
 HRiderInvalidCountry,
-HRiderInvalidName
+HRiderInvalidName,
+HRiderNotHired,
+HRiderPayin,
+HRiderPayinBelowMinimum,
+HRiderPayinLate,
+HRiderPaymentsCompleted,
+HSharingBreakdown
 } from "./types/common.sol";
 import {HHelper} from "./helpers/HHelper.sol";
 //</editor-fold desc="Imports">
@@ -629,6 +637,120 @@ contract Henriable is HHelper {
     }
 
     //</editor-fold desc="Action:Rider: Register as a rider">
+
+    //<editor-fold desc="Action:Rider: Pay in">
+
+    /// @notice Lets the hired rider make a periodic payment under a running hire purchase.
+    /// @dev    The rider must be the one hired on an investment in {HInvestmentStatus.Hired},
+    ///         must not have completed the target total, must pay a non-late payment of at
+    ///         least {HInvestment.minimumRiderPeriodicPayingsUsd}. The payment is split by
+    ///         {calcSharingFormula} (currently equally) and credited to the owner, the
+    ///         senior/junior investor pools and the rider's savings.
+    ///         States updated: {riderPayinsList}, {riderPayins}, {HInvestment.riderPayinsHistory},
+    ///         {HInvestment.riderNextPayinDate}, {ownerPayoutsList}, {investorPayoutList},
+    ///         {HInvestment.riderSavings}, {HInvestment.investmentPayoutHistory} and the
+    ///         per-investor payout histories.
+    /// @param _investmentId The id of the investment being paid.
+    /// @param _approvedUSD The USDC the rider is paying; must be at least the minimum.
+    function actionRiderPayin(bytes32 _investmentId, uint256 _approvedUSD) external {
+        // Get the investment (reverts if it is not registered).
+        HInvestment storage investment = getInvestmentStorage(_investmentId);
+
+        // The hire purchase must be running.
+        {
+            HInvestmentStatus[] memory allowedStatuses = new HInvestmentStatus[](1);
+            allowedStatuses[0] = HInvestmentStatus.Hired;
+
+            bool investmentNotHired = !isInvestmentStatus(_investmentId, allowedStatuses);
+            if (investmentNotHired) revert HInvestmentNotHired(_investmentId);
+        }
+
+        // Only the hired rider may pay.
+        {
+            bool notTheHiredRider = investment.riderWhoHiredIt != msg.sender;
+            if (notTheHiredRider) revert HRiderNotHired(_investmentId, msg.sender);
+        }
+
+        HPayingHistory storage payinsHistory = investment.riderPayinsHistory;
+
+        // The rider must not have finished paying.
+        {
+            bool paymentsCompleted = payinsHistory.totalAmountPaid >= payinsHistory.targetTotalPay;
+            if (paymentsCompleted) revert HRiderPaymentsCompleted(_investmentId);
+        }
+
+        // The payment must meet the minimum for this period, except for the final
+        // instalment: when the remaining balance is below the minimum, only the
+        // remaining balance is due and a smaller payment is accepted.
+        {
+            uint256 remainingToPay = payinsHistory.targetTotalPay - payinsHistory.totalAmountPaid;
+            uint256 requiredThisPayment = investment.minimumRiderPeriodicPayingsUsd;
+
+            bool remainingBelowMinimum = remainingToPay < requiredThisPayment;
+            if (remainingBelowMinimum) {
+                requiredThisPayment = remainingToPay;
+            }
+
+            bool belowMinimum = _approvedUSD < requiredThisPayment;
+            if (belowMinimum) revert HRiderPayinBelowMinimum(_approvedUSD, requiredThisPayment);
+        }
+
+        // ...and must not be late.
+        {
+            bool paymentLate = block.timestamp > investment.riderNextPayinDate;
+            if (paymentLate) revert HRiderPayinLate(_investmentId);
+        }
+
+        // Effects: record the payment and all accounting before any token movement.
+        bytes32 riderId = bytes32(uint256(uint160(msg.sender)));
+        riderPayinsList.push(
+            HRiderPayin({
+                riderId: riderId,
+                investmentId: _investmentId,
+                amountPaid: _approvedUSD,
+                timePaid: block.timestamp,
+                addressPaidInto: address(this)
+            })
+        );
+        investment.riderPayinIndexes.push(riderPayinsList.length);
+
+        // Update the rider's payment history and push the next due date by one period.
+        payinsHistory.riderAddress = msg.sender;
+        payinsHistory.totalAmountPaid += _approvedUSD;
+        payinsHistory.totalNumberOfTimesPaid += 1;
+        investment.riderNextPayinDate += investment.periodicRiderPayingInMinutes * 60;
+
+        // Split the payment and record each beneficiary's share.
+        HSharingBreakdown memory breakdown = calcSharingFormula(_approvedUSD);
+        recordDistribution(investment, _investmentId, breakdown);
+
+        // Record completion once the rider has paid the target.
+        bool riderCompleted = payinsHistory.totalAmountPaid >= payinsHistory.targetTotalPay;
+        if (riderCompleted) {
+            investment.timeRiderCompletedPayments = block.timestamp;
+        }
+
+        // Interactions: pull the payment in, pay everyone out, then hand over the title.
+        ownerUsdToken.safeTransferFrom(msg.sender, address(this), _approvedUSD);
+        transferDistribution(investment, breakdown);
+
+        // Transfer ownership.
+        if (riderCompleted) {
+            actionTransferOwnershipToRider(msg.sender, _investmentId);
+        }
+    }
+
+    //</editor-fold desc="Action:Rider: Pay in">
+
+    //<editor-fold desc="Action:Rider: Complete payment">
+
+    /// @notice Transfers the NFT title of a completed hire purchase to the rider.
+    /// @dev    Placeholder: empty stub. To be implemented once the NFT/ownership flow
+    ///         is built (mint title, transfer to rider, mark the investment complete).
+    ///         Parameters are (rider address, investment id) and are intentionally unused.
+    function actionTransferOwnershipToRider(address, bytes32) public {}
+
+    //</editor-fold desc="Action:Rider: Complete payment">
 
     //</editor-fold desc="Actions">
 }
