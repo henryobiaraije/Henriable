@@ -95,45 +95,45 @@
       11. total\_number\_of\_junior\_investors\_needed: (uint256) (The total number of junior investors needed)  
    2. ### HInvestment {#hinvestment}
 
-      1. Single struct. Solidity structs cannot inherit (no TypeScript-style `extends`), so the
-         admin-supplied settings and the contract-filled fields are combined here. In code
-         they are grouped with editor-folds: "Fields: Admin Supplied" and "Fields: Contract Filled".
+      1. Single struct. Solidity structs cannot inherit (no TypeScript-style `extends`), so the  
+         admin-supplied settings and the contract-filled fields are combined here. In code  
+         they are grouped with editor-folds: "Fields: Admin Supplied" and "Fields: Contract Filled".  
 
       2. #### Fields: Admin Supplied
 
-         1. investmentId: (bytes32) (unique investment slot ID)
-         2. assetId: (bytes32) (The asset ID to invest in)
-         3. totalSeniorInvestorsNeeded: (uint256)
-         4. totalJuniorInvestorsNeeded: (uint256)
-         5. riderInitialBuyinUsd: (uint256)
-         6. periodicRiderPayingInMinutes: (uint256)
-         7. minimumRiderPeriodicPayingsUsd: (uint256)
+         1. investmentId: (bytes32) (unique investment slot ID)  
+         2. assetId: (bytes32) (The asset ID to invest in)  
+         3. totalSeniorInvestorsNeeded: (uint256)  
+         4. totalJuniorInvestorsNeeded: (uint256)  
+         5. riderInitialBuyinUsd: (uint256)  
+         6. periodicRiderPayingInMinutes: (uint256)  
+         7. minimumRiderPeriodicPayingsUsd: (uint256)  
 
       3. #### Fields: Contract Filled
 
-         1. active: (bool) (forced true on creation; can only be updated while no investor has invested in it)
-         2. seniorInvestorsList: Array of investor addresses
-         3. seniorInvestors: mapping(investorAddress => investorIndex)
-         4. juniorInvestorsList: Array of investor addresses
-         5. juniorInvestors: mapping(investorAddress => investorIndex)
-         6. investmentsDoneAt: uint256
-         7. status: (HInvestmentStatus)
-         8. timeNextInvestmentStart: (uint256) (Time the next investment round is allowed to start)
-         9. timeNextInvestmentEnd: (uint256) (Time the next investment round would end)
-         10. timeNextRiderHireRequestStart: (uint256) (Time the next hire purchase request round is scheduled to start)
-         11. timeNextRiderHireRequestEnd: (uint256) (Time the next hire purchase request round is scheduled to end)
-         12. ridersHirePurchaseRequestsList: Array of (uint256): points to the specific rider hire-purchase request.
-         13. ridersHirePurchaseRequests: mapping(riderAddress => uint256) (the index of the hire-purchase request)
-         14. riderWhoHiredIt: address (the address of the rider who will/or hired it)
-         15. riderNextPayinDate: uint256
-         16. riderPayinsHistory: (HPayingHistory)
-         17. riderSavings: HRiderSavingsHistory
-         18. investorPayoutHistory: mapping(investorAddress => HInvestorPayoutsHistory)
-         19. investmentPayoutHistory: (HInvestmentPayoutsHistory)
-         20. contractPayoutHistory: (HOwnerPayoutsHistory)
-         21. nftTokenId: (Token id of the newly minted NFT title for the asset being invested in here)
-         22. timeRiderCompletedPayments: (uint256)
-         23. timeNftTransferedToRider: (uint256)
+         1. active: (bool) (forced true on creation; can only be updated while no investor has invested in it)  
+         2. seniorInvestorsList: Array of investor addresses  
+         3. seniorInvestors: mapping(investorAddress => investorIndex)  
+         4. juniorInvestorsList: Array of investor addresses  
+         5. juniorInvestors: mapping(investorAddress => investorIndex)  
+         6. investmentsDoneAt: uint256  
+         7. status: (HInvestmentStatus)  
+         8. timeNextInvestmentStart: (uint256) (Time the next investment round is allowed to start)  
+         9. timeNextInvestmentEnd: (uint256) (Time the next investment round would end)  
+         10. timeNextRiderHireRequestStart: (uint256) (Time the next hire purchase request round is scheduled to start)  
+         11. timeNextRiderHireRequestEnd: (uint256) (Time the next hire purchase request round is scheduled to end)  
+         12. ridersHirePurchaseRequestsList: Array of (uint256): points to the specific rider hire-purchase request.  
+         13. ridersHirePurchaseRequests: mapping(riderAddress => uint256) (the index of the hire-purchase request)  
+         14. riderWhoHiredIt: address (the address of the rider who will/or hired it)  
+         15. riderNextPayinDate: uint256  
+         16. riderPayinsHistory: (HPayingHistory)  
+         17. riderSavings: HRiderSavingsHistory  
+         18. investorPayoutHistory: mapping(investorAddress => HInvestorPayoutsHistory)  
+         19. investmentPayoutHistory: (HInvestmentPayoutsHistory)  
+         20. contractPayoutHistory: (HOwnerPayoutsHistory)  
+         21. nftTokenId: (Token id of the newly minted NFT title for the asset being invested in here)  
+         22. timeRiderCompletedPayments: (uint256)  
+         23. timeNftTransferedToRider: (uint256)  
 
    4. ### HInvestor
 
