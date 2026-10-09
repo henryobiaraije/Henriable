@@ -8,20 +8,20 @@ pragma solidity ^0.8.13;
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {
-    HAsset,
-    HInvestment,
-    HInvestmentStatus,
-    HInvestor,
-    HRider,
-    HRiderHirePurchaseRequest,
-    HRiderPayin,
-    HPayingHistory,
-    HOwnerPayout,
-    HOwnerPayoutsHistory,
-    HInvestorPayout,
-    HInvestorPayoutsHistory,
-    HInvestmentPayoutsHistory,
-    HRiderSavingsHistory
+HAsset,
+HInvestment,
+HInvestmentStatus,
+HInvestor,
+HRider,
+HRiderHirePurchaseRequest,
+HRiderPayin,
+HPayingHistory,
+HOwnerPayout,
+HOwnerPayoutsHistory,
+HInvestorPayout,
+HInvestorPayoutsHistory,
+HInvestmentPayoutsHistory,
+HRiderSavingsHistory
 } from "../types/common.sol";
 //</editor-fold desc="Imports">
 
@@ -29,7 +29,26 @@ import {
 /// @author Obiaraije Henry
 /// @dev Inherits OpenZeppelin {Ownable} so the launch owner is set at construction.
 contract HHelper is Ownable {
+
     //<editor-fold desc="States">
+
+    //<editor-fold desc="State: Owner">
+    /// @notice USDC token used for all investments, payouts and payments.
+    IERC20 internal ownerUsdToken;
+
+    /// @notice All owner/contract payouts ever made.
+    HOwnerPayout[] internal ownerPayoutsList;
+
+    /// @notice Maps an investment id to the index (in {ownerPayoutsList}) of the
+    ///         most recent owner payout for that investment.
+    mapping(bytes32 => uint256) internal ownerPayouts;
+
+    /// @notice Maps an investment id to the aggregate owner payout history for it.
+    mapping(bytes32 => HOwnerPayoutsHistory) internal ownerPayoutHistory;
+
+    //</editor-fold desc="State: Owner">
+
+    //<editor-fold desc="State: Assets">
 
     /// @notice All registered assets, in insertion order.
     HAsset[] internal assetsList;
@@ -39,8 +58,9 @@ contract HHelper is Ownable {
     ///         this single mapping provides an O(1) existence check and lookup.
     mapping(bytes32 => uint256) internal assets;
 
-    /// @notice USDC token used for all investments, payouts and payments.
-    IERC20 internal ownerUsdToken;
+    //</editor-fold desc="State: Assets">
+
+    //<editor-fold desc="State: Investments">
 
     /// @notice Maps an asset id to the indices (into {investmentsList}) of the
     ///         investments created for that asset.
@@ -55,8 +75,31 @@ contract HHelper is Ownable {
     /// @notice All registered investors.
     HInvestor[] internal investorsList;
 
+    /// @notice Indices (into {investmentsList}) of investments whose rider has fully
+    ///         paid and that are complete.
+    uint256[] internal completedRiderInvestmentList;
+
+    /// @notice Indices (into {investmentsList}) of completed rider investments. This
+    ///         list is append-only and is never cleared.
+    uint256[] internal investmentsCompleted;
+
+    //</editor-fold desc="State: Investments">
+
+    //<editor-fold desc="State: Investors">
+
     /// @notice Maps an investor address to its index in {investorsList}.
     mapping(address => uint256) internal investors;
+
+    /// @notice All investor payouts ever made.
+    HInvestorPayout[] internal investorPayoutList;
+
+    /// @notice Maps an investor address and investment id to the index (in
+    ///         {investorPayoutList}) of the investor's payout.
+    mapping(address => mapping(bytes32 => uint256)) internal investorPayouts;
+
+    //</editor-fold desc="State: Investors">
+
+    //<editor-fold desc="State: Riders">
 
     /// @notice All registered riders.
     HRider[] internal ridersList;
@@ -82,30 +125,7 @@ contract HHelper is Ownable {
     ///         {riderPayinsList}) of the rider's payment.
     mapping(address => mapping(bytes32 => uint256)) internal riderPayins;
 
-    /// @notice All investor payouts ever made.
-    HInvestorPayout[] internal investorPayoutList;
-
-    /// @notice Maps an investor address and investment id to the index (in
-    ///         {investorPayoutList}) of the investor's payout.
-    mapping(address => mapping(bytes32 => uint256)) internal investorPayouts;
-
-    /// @notice All owner/contract payouts ever made.
-    HOwnerPayout[] internal ownerPayoutsList;
-
-    /// @notice Maps an investment id to the index (in {ownerPayoutsList}) of the
-    ///         most recent owner payout for that investment.
-    mapping(bytes32 => uint256) internal ownerPayouts;
-
-    /// @notice Maps an investment id to the aggregate owner payout history for it.
-    mapping(bytes32 => HOwnerPayoutsHistory) internal ownerPayoutHistory;
-
-    /// @notice Indices (into {investmentsList}) of investments whose rider has fully
-    ///         paid and that are complete.
-    uint256[] internal completedRiderInvestmentList;
-
-    /// @notice Indices (into {investmentsList}) of completed rider investments. This
-    ///         list is append-only and is never cleared.
-    uint256[] internal investmentsCompleted;
+    //</editor-fold desc="State: Riders">
 
     //</editor-fold desc="States">
 
@@ -204,20 +224,20 @@ contract HHelper is Ownable {
     /// @return minimumRiderPeriodicPayingsUsd Minimum rider payment per period, in USDC.
     /// @return status Current lifecycle status.
     function getInvestmentCore(uint256 index)
-        external
-        view
-        returns (
-            bytes32 investmentId,
-            bool active,
-            bytes32 assetId,
-            uint256 totalSeniorInvestorsNeeded,
-            uint256 totalJuniorInvestorsNeeded,
-            uint256 investmentsDoneAt,
-            uint256 riderInitialBuyinUsd,
-            uint256 periodicRiderPayingInMinutes,
-            uint256 minimumRiderPeriodicPayingsUsd,
-            HInvestmentStatus status
-        )
+    external
+    view
+    returns (
+        bytes32 investmentId,
+        bool active,
+        bytes32 assetId,
+        uint256 totalSeniorInvestorsNeeded,
+        uint256 totalJuniorInvestorsNeeded,
+        uint256 investmentsDoneAt,
+        uint256 riderInitialBuyinUsd,
+        uint256 periodicRiderPayingInMinutes,
+        uint256 minimumRiderPeriodicPayingsUsd,
+        HInvestmentStatus status
+    )
     {
         HInvestment storage inv = investmentsList[index];
         investmentId = inv.investmentId;
@@ -239,14 +259,14 @@ contract HHelper is Ownable {
     /// @return timeNextRiderHireRequestStart Start of the next hire-request round.
     /// @return timeNextRiderHireRequestEnd End of the next hire-request round.
     function getInvestmentSchedule(uint256 index)
-        external
-        view
-        returns (
-            uint256 timeNextInvestmentStart,
-            uint256 timeNextInvestmentEnd,
-            uint256 timeNextRiderHireRequestStart,
-            uint256 timeNextRiderHireRequestEnd
-        )
+    external
+    view
+    returns (
+        uint256 timeNextInvestmentStart,
+        uint256 timeNextInvestmentEnd,
+        uint256 timeNextRiderHireRequestStart,
+        uint256 timeNextRiderHireRequestEnd
+    )
     {
         HInvestment storage inv = investmentsList[index];
         timeNextInvestmentStart = inv.timeNextInvestmentStart;
@@ -263,15 +283,15 @@ contract HHelper is Ownable {
     /// @return timeRiderCompletedPayments Time the rider completed all payments.
     /// @return timeNftTransferedToRider Time the NFT title was transferred to the rider.
     function getInvestmentRiderInfo(uint256 index)
-        external
-        view
-        returns (
-            address riderWhoHiredIt,
-            uint256 riderNextPayinDate,
-            uint256 nftTokenId,
-            uint256 timeRiderCompletedPayments,
-            uint256 timeNftTransferedToRider
-        )
+    external
+    view
+    returns (
+        address riderWhoHiredIt,
+        uint256 riderNextPayinDate,
+        uint256 nftTokenId,
+        uint256 timeRiderCompletedPayments,
+        uint256 timeNftTransferedToRider
+    )
     {
         HInvestment storage inv = investmentsList[index];
         riderWhoHiredIt = inv.riderWhoHiredIt;
@@ -300,9 +320,9 @@ contract HHelper is Ownable {
     /// @param investor The investor address.
     /// @return The index in the senior investors list.
     function getSeniorInvestorIndex(bytes32 investmentId, address investor)
-        external
-        view
-        returns (uint256)
+    external
+    view
+    returns (uint256)
     {
         return investmentsList[investments[investmentId]].seniorInvestors[investor];
     }
@@ -312,9 +332,9 @@ contract HHelper is Ownable {
     /// @param investor The investor address.
     /// @return The index in the junior investors list.
     function getJuniorInvestorIndex(bytes32 investmentId, address investor)
-        external
-        view
-        returns (uint256)
+    external
+    view
+    returns (uint256)
     {
         return investmentsList[investments[investmentId]].juniorInvestors[investor];
     }
@@ -323,9 +343,9 @@ contract HHelper is Ownable {
     /// @param index The index into {investmentsList}.
     /// @return Indices into {ridersHirePurchasesRequestsList}.
     function getRidersHirePurchaseRequestsList(uint256 index)
-        external
-        view
-        returns (uint256[] memory)
+    external
+    view
+    returns (uint256[] memory)
     {
         return investmentsList[index].ridersHirePurchaseRequestsList;
     }
@@ -335,9 +355,9 @@ contract HHelper is Ownable {
     /// @param rider The rider address.
     /// @return The index into {ridersHirePurchasesRequestsList}.
     function getRiderHirePurchaseRequestIndex(bytes32 investmentId, address rider)
-        external
-        view
-        returns (uint256)
+    external
+    view
+    returns (uint256)
     {
         return investmentsList[investments[investmentId]].ridersHirePurchaseRequests[rider];
     }
@@ -346,9 +366,9 @@ contract HHelper is Ownable {
     /// @param index The index into {investmentsList}.
     /// @return The {HPayingHistory} for the investment's rider.
     function getInvestmentRiderPayinsHistory(uint256 index)
-        external
-        view
-        returns (HPayingHistory memory)
+    external
+    view
+    returns (HPayingHistory memory)
     {
         return investmentsList[index].riderPayinsHistory;
     }
@@ -357,9 +377,9 @@ contract HHelper is Ownable {
     /// @param index The index into {investmentsList}.
     /// @return The {HRiderSavingsHistory} for the investment's rider.
     function getInvestmentRiderSavings(uint256 index)
-        external
-        view
-        returns (HRiderSavingsHistory memory)
+    external
+    view
+    returns (HRiderSavingsHistory memory)
     {
         return investmentsList[index].riderSavings;
     }
@@ -369,9 +389,9 @@ contract HHelper is Ownable {
     /// @param investor The investor address.
     /// @return The {HInvestorPayoutsHistory} for that investor.
     function getInvestorPayoutHistory(bytes32 investmentId, address investor)
-        external
-        view
-        returns (HInvestorPayoutsHistory memory)
+    external
+    view
+    returns (HInvestorPayoutsHistory memory)
     {
         return investmentsList[investments[investmentId]].investorPayoutHistory[investor];
     }
@@ -380,9 +400,9 @@ contract HHelper is Ownable {
     /// @param index The index into {investmentsList}.
     /// @return The {HInvestmentPayoutsHistory} for the investment.
     function getInvestmentPayoutHistory(uint256 index)
-        external
-        view
-        returns (HInvestmentPayoutsHistory memory)
+    external
+    view
+    returns (HInvestmentPayoutsHistory memory)
     {
         return investmentsList[index].investmentPayoutHistory;
     }
@@ -391,9 +411,9 @@ contract HHelper is Ownable {
     /// @param index The index into {investmentsList}.
     /// @return The {HOwnerPayoutsHistory} for the investment.
     function getInvestmentContractPayoutHistory(uint256 index)
-        external
-        view
-        returns (HOwnerPayoutsHistory memory)
+    external
+    view
+    returns (HOwnerPayoutsHistory memory)
     {
         return investmentsList[index].contractPayoutHistory;
     }
@@ -468,9 +488,9 @@ contract HHelper is Ownable {
     /// @param index The index into {ridersHirePurchasesRequestsList}.
     /// @return The {HRiderHirePurchaseRequest} at the given index.
     function getHireRequestAt(uint256 index)
-        external
-        view
-        returns (HRiderHirePurchaseRequest memory)
+    external
+    view
+    returns (HRiderHirePurchaseRequest memory)
     {
         return ridersHirePurchasesRequestsList[index];
     }
@@ -480,9 +500,9 @@ contract HHelper is Ownable {
     /// @param investmentId The id of the investment.
     /// @return A non-zero marker if the rider was rejected, otherwise zero.
     function getRejectedRiderIndex(bytes32 riderId, bytes32 investmentId)
-        external
-        view
-        returns (uint256)
+    external
+    view
+    returns (uint256)
     {
         return rejectedRiders[riderId][investmentId];
     }
@@ -507,9 +527,9 @@ contract HHelper is Ownable {
     /// @param investmentId The id of the investment.
     /// @return The index into {riderPayinsList}.
     function getRiderPayinIndex(address rider, bytes32 investmentId)
-        external
-        view
-        returns (uint256)
+    external
+    view
+    returns (uint256)
     {
         return riderPayins[rider][investmentId];
     }
@@ -534,9 +554,9 @@ contract HHelper is Ownable {
     /// @param investmentId The id of the investment.
     /// @return The index into {investorPayoutList}.
     function getInvestorPayoutIndex(address investor, bytes32 investmentId)
-        external
-        view
-        returns (uint256)
+    external
+    view
+    returns (uint256)
     {
         return investorPayouts[investor][investmentId];
     }
@@ -567,9 +587,9 @@ contract HHelper is Ownable {
     /// @param investmentId The id of the investment.
     /// @return The {HOwnerPayoutsHistory} for the investment.
     function getOwnerPayoutHistory(bytes32 investmentId)
-        external
-        view
-        returns (HOwnerPayoutsHistory memory)
+    external
+    view
+    returns (HOwnerPayoutsHistory memory)
     {
         return ownerPayoutHistory[investmentId];
     }
