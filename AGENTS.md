@@ -33,6 +33,20 @@ Conventions and context for the Henriable Solidity codebase. Follow these every 
 - `HHelper is Ownable` (OpenZeppelin). The constructor sets `ownerUsdToken` and calls
   `Ownable(initialOwner)`. Do NOT declare an `_owner` state — Ownable owns it.
 
+## Tests
+
+- Each function under test gets its own test file, and every scenario it should satisfy is
+  a separate `test_...` function inside that file.
+- Name test files `<Contract>_<FunctionName>_Test.t.sol`, e.g.
+  `HHelper_IsAssetSettingsCorrect_Test.t.sol` for `HHelper.isAssetSettingsCorrect`.
+- Mirror the source layout under `test/`, so a contract's tests live in a folder matching
+  the contract's source path: `src/helpers/HHelper.sol` -> `test/helpers/hhelper/`.
+- Test contracts inherit forge-std `Test` and the contract under test, so `internal`
+  helpers can be called directly; each calls the inherited contract's constructor from its
+  own constructor.
+- Name each scenario after the behaviour it asserts (e.g.
+  `test_IsAssetSettingsCorrect_ReturnsFalse_WhenSellPriceBelowPayouts`).
+
 ## If statements
 
 - Never put a negated expression directly in an `if` condition.
@@ -107,3 +121,9 @@ if (investmentNotPending) {
 - No events for now; the user will decide where events go when building the frontend.
 - Asset ids are caller-supplied; uniqueness is enforced via the index mapping.
 - A newly added asset is always forced `active = true`.
+- Asset pricing: `isAssetSettingsCorrect` requires the investor buying totals to be at
+  least `costPrice`, and `sellPrice` to cover the investor principal plus their profits
+  plus `ownerProfit`. The rider's `riderSlashableRepayableExtraCharge` is charged on top of
+  the sell price and refunded on ownership transfer, so it is excluded from this check.
+- The rider's total obligation is `HAsset.sellPrice`; `HPayingHistory` tracks only how much
+  the rider has paid (`totalAmountPaid`) and the payment count, never a separate target.
