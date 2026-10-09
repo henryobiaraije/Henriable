@@ -64,74 +64,16 @@ struct HAsset {
     uint256 totalNumberOfJuniorInvestorsNeeded;
 }
 
-/// @title HHalfInvestment
-/// @notice The configuration ("level 1") of a single investment opportunity before
-///         any investors or riders are attached. It defines the funding target and
-///         the rider's hire-purchase terms for one asset.
-/// @dev    This is the shape submitted by the admin when creating an investment.
-///         It is folded into (inlined as the leading fields of) {HInvestment}, which
-///         is the full on-chain record once the opportunity goes live.
-struct HHalfInvestment {
-    /// @notice Unique identifier of this investment slot.
-    bytes32 investmentId;
-
-    /// @notice Whether this opportunity is active.
-    /// @dev    May only be changed while no investor has invested in it.
-    bool active;
-
-    /// @notice Identifier of the {HAsset} this opportunity invests in.
-    bytes32 assetId;
-
-    /// @notice Number of senior investor slots that must be filled.
-    uint256 totalSeniorInvestorsNeeded;
-
-    /// @notice Number of junior investor slots that must be filled.
-    uint256 totalJuniorInvestorsNeeded;
-
-    /// @notice Ordered list of senior investor addresses that have invested.
-    address[] seniorInvestorsList;
-
-    /// @notice Maps a senior investor address to its index in {seniorInvestorsList}.
-    mapping(address => uint256) seniorInvestors;
-
-    /// @notice Ordered list of junior investor addresses that have invested.
-    address[] juniorInvestorsList;
-
-    /// @notice Maps a junior investor address to its index in {juniorInvestorsList}.
-    mapping(address => uint256) juniorInvestors;
-
-    /// @notice Timestamp at which the investment finished raising its target.
-    uint256 investmentsDoneAt;
-
-    /// @notice Initial buy-in a rider must pay to start the hire purchase, in USDC.
-    uint256 riderInitialBuyinUsd;
-
-    /// @notice Length of each rider payment period, in minutes.
-    uint256 periodicRiderPayingInMinutes;
-
-    /// @notice Minimum amount a rider must pay per period, in USDC.
-    uint256 minimumRiderPeriodicPayingsUsd;
-
-    /// @notice Current lifecycle state of the investment.
-    HInvestmentStatus status;
-}
-
 /// @title HInvestment
 /// @notice The full on-chain record of an investment opportunity.
-/// @dev    It begins with every field of {HHalfInvestment} (inlined, since Solidity
-///         structs cannot inherit) and adds the scheduling, rider hire-purchase and
-///         payout-tracking fields used once the opportunity is funded and hired.
+/// @dev    Solidity structs cannot inherit, so the admin-supplied creation settings
+///         and the contract-filled fields are combined into this single struct and
+///         demarcated by the editor-folds below.
 struct HInvestment {
-    // ---------------------------------------------------------------------
-    // Fields carried over from HHalfInvestment
-    // ---------------------------------------------------------------------
+    //<editor-fold desc="Fields: Admin Supplied">
 
     /// @notice Unique identifier of this investment slot.
     bytes32 investmentId;
-
-    /// @notice Whether this opportunity is active.
-    /// @dev    May only be changed while no investor has invested in it.
-    bool active;
 
     /// @notice Identifier of the {HAsset} this opportunity invests in.
     bytes32 assetId;
@@ -141,6 +83,24 @@ struct HInvestment {
 
     /// @notice Number of junior investor slots that must be filled.
     uint256 totalJuniorInvestorsNeeded;
+
+    /// @notice Initial buy-in a rider must pay to start the hire purchase, in USDC.
+    uint256 riderInitialBuyinUsd;
+
+    /// @notice Length of each rider payment period, in minutes.
+    uint256 periodicRiderPayingInMinutes;
+
+    /// @notice Minimum amount a rider must pay per period, in USDC.
+    uint256 minimumRiderPeriodicPayingsUsd;
+
+    //</editor-fold desc="Fields: Admin Supplied">
+
+    //<editor-fold desc="Fields: Contract Filled">
+
+    /// @notice Whether this opportunity is active.
+    /// @dev    May only be changed while no investor has invested in it. Forced
+    ///         active when the opportunity is created.
+    bool active;
 
     /// @notice Ordered list of senior investor addresses that have invested.
     address[] seniorInvestorsList;
@@ -156,15 +116,6 @@ struct HInvestment {
 
     /// @notice Timestamp at which the investment finished raising its target.
     uint256 investmentsDoneAt;
-
-    /// @notice Initial buy-in a rider must pay to start the hire purchase, in USDC.
-    uint256 riderInitialBuyinUsd;
-
-    /// @notice Length of each rider payment period, in minutes.
-    uint256 periodicRiderPayingInMinutes;
-
-    /// @notice Minimum amount a rider must pay per period, in USDC.
-    uint256 minimumRiderPeriodicPayingsUsd;
 
     /// @notice Current lifecycle state of the investment.
     HInvestmentStatus status;
@@ -224,6 +175,8 @@ struct HInvestment {
 
     /// @notice Timestamp at which the NFT title was transferred to the rider.
     uint256 timeNftTransferedToRider;
+
+    //</editor-fold desc="Fields: Contract Filled">
 }
 
 /// @title HInvestor
@@ -469,6 +422,40 @@ error HAssetInvalidCostPrice();
 
 /// @notice Thrown when an asset is registered with a zero sell price.
 error HAssetInvalidSellPrice();
+
+/// @notice Thrown when an operation references an asset that is not active.
+/// @param id The inactive asset id.
+error HAssetNotActive(bytes32 id);
+
+/// @notice Thrown when an investment is registered without a non-zero id.
+error HInvestmentInvalidId();
+
+/// @notice Thrown when registering an investment whose id is already in use.
+/// @param id The already-existing investment id.
+error HInvestmentAlreadyExists(bytes32 id);
+
+/// @notice Thrown when an operation references an investment id that is not registered.
+/// @param id The unknown investment id.
+error HInvestmentDoesNotExist(bytes32 id);
+
+/// @notice Thrown when an investment is registered with zero senior investor slots.
+error HInvestmentInvalidSeniorInvestorsNeeded();
+
+/// @notice Thrown when an investment is registered with zero junior investor slots.
+error HInvestmentInvalidJuniorInvestorsNeeded();
+
+/// @notice Thrown when an investment is registered with a zero rider initial buy-in.
+error HInvestmentInvalidRiderInitialBuyin();
+
+/// @notice Thrown when an investment is registered with a zero periodic rider paying period.
+error HInvestmentInvalidPeriodicRiderPayingInMinutes();
+
+/// @notice Thrown when an investment is registered with a zero minimum rider periodic payment.
+error HInvestmentInvalidMinimumRiderPeriodicPayings();
+
+/// @notice Thrown when an investment's level-1 settings are not accurate enough to
+///         cover the profits promised to senior and junior investors.
+error HInvestmentInvalidSettings();
 
 //</editor-fold desc="Errors">
 
