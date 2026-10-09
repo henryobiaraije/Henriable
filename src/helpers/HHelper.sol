@@ -204,6 +204,21 @@ contract HHelper is Ownable {
         return assets[assetId] != 0;
     }
 
+    /// @notice Returns a storage reference to a registered asset.
+    /// @dev    Hides the `index + 1` bookkeeping so callers can read or write fields
+    ///         directly, e.g. `getAssetStorage(id).active = false;`. Reverts if the
+    ///         asset is not registered.
+    /// @param assetId The id of the asset.
+    /// @return A storage reference to the asset.
+    function getAssetStorage(bytes32 assetId) internal view returns (HAsset storage) {
+        uint256 indexPlusOne = assets[assetId];
+
+        bool assetDoesNotExist = indexPlusOne == 0;
+        if (assetDoesNotExist) revert HAssetDoesNotExist(assetId);
+
+        return assetsList[indexPlusOne - 1];
+    }
+
     /// @notice Returns the indices of the investments created for an asset.
     /// @param assetId The id of the asset.
     /// @return An array of indices into {investmentsList}.
