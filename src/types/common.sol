@@ -64,9 +64,381 @@ struct HAsset {
     uint256 totalNumberOfJuniorInvestorsNeeded;
 }
 
+/// @title HHalfInvestment
+/// @notice The configuration ("level 1") of a single investment opportunity before
+///         any investors or riders are attached. It defines the funding target and
+///         the rider's hire-purchase terms for one asset.
+/// @dev    This is the shape submitted by the admin when creating an investment.
+///         It is folded into (inlined as the leading fields of) {HInvestment}, which
+///         is the full on-chain record once the opportunity goes live.
+struct HHalfInvestment {
+    /// @notice Unique identifier of this investment slot.
+    bytes32 investmentId;
+
+    /// @notice Whether this opportunity is active.
+    /// @dev    May only be changed while no investor has invested in it.
+    bool active;
+
+    /// @notice Identifier of the {HAsset} this opportunity invests in.
+    bytes32 assetId;
+
+    /// @notice Number of senior investor slots that must be filled.
+    uint256 totalSeniorInvestorsNeeded;
+
+    /// @notice Number of junior investor slots that must be filled.
+    uint256 totalJuniorInvestorsNeeded;
+
+    /// @notice Ordered list of senior investor addresses that have invested.
+    address[] seniorInvestorsList;
+
+    /// @notice Maps a senior investor address to its index in {seniorInvestorsList}.
+    mapping(address => uint256) seniorInvestors;
+
+    /// @notice Ordered list of junior investor addresses that have invested.
+    address[] juniorInvestorsList;
+
+    /// @notice Maps a junior investor address to its index in {juniorInvestorsList}.
+    mapping(address => uint256) juniorInvestors;
+
+    /// @notice Timestamp at which the investment finished raising its target.
+    uint256 investmentsDoneAt;
+
+    /// @notice Initial buy-in a rider must pay to start the hire purchase, in USDC.
+    uint256 riderInitialBuyinUsd;
+
+    /// @notice Length of each rider payment period, in minutes.
+    uint256 periodicRiderPayingInMinutes;
+
+    /// @notice Minimum amount a rider must pay per period, in USDC.
+    uint256 minimumRiderPeriodicPayingsUsd;
+
+    /// @notice Current lifecycle state of the investment.
+    HInvestmentStatus status;
+}
+
+/// @title HInvestment
+/// @notice The full on-chain record of an investment opportunity.
+/// @dev    It begins with every field of {HHalfInvestment} (inlined, since Solidity
+///         structs cannot inherit) and adds the scheduling, rider hire-purchase and
+///         payout-tracking fields used once the opportunity is funded and hired.
+struct HInvestment {
+    // ---------------------------------------------------------------------
+    // Fields carried over from HHalfInvestment
+    // ---------------------------------------------------------------------
+
+    /// @notice Unique identifier of this investment slot.
+    bytes32 investmentId;
+
+    /// @notice Whether this opportunity is active.
+    /// @dev    May only be changed while no investor has invested in it.
+    bool active;
+
+    /// @notice Identifier of the {HAsset} this opportunity invests in.
+    bytes32 assetId;
+
+    /// @notice Number of senior investor slots that must be filled.
+    uint256 totalSeniorInvestorsNeeded;
+
+    /// @notice Number of junior investor slots that must be filled.
+    uint256 totalJuniorInvestorsNeeded;
+
+    /// @notice Ordered list of senior investor addresses that have invested.
+    address[] seniorInvestorsList;
+
+    /// @notice Maps a senior investor address to its index in {seniorInvestorsList}.
+    mapping(address => uint256) seniorInvestors;
+
+    /// @notice Ordered list of junior investor addresses that have invested.
+    address[] juniorInvestorsList;
+
+    /// @notice Maps a junior investor address to its index in {juniorInvestorsList}.
+    mapping(address => uint256) juniorInvestors;
+
+    /// @notice Timestamp at which the investment finished raising its target.
+    uint256 investmentsDoneAt;
+
+    /// @notice Initial buy-in a rider must pay to start the hire purchase, in USDC.
+    uint256 riderInitialBuyinUsd;
+
+    /// @notice Length of each rider payment period, in minutes.
+    uint256 periodicRiderPayingInMinutes;
+
+    /// @notice Minimum amount a rider must pay per period, in USDC.
+    uint256 minimumRiderPeriodicPayingsUsd;
+
+    /// @notice Current lifecycle state of the investment.
+    HInvestmentStatus status;
+
+    // ---------------------------------------------------------------------
+    // Scheduling
+    // ---------------------------------------------------------------------
+
+    /// @notice Timestamp at which the next investment round is allowed to start.
+    uint256 timeNextInvestmentStart;
+
+    /// @notice Timestamp at which the next investment round ends.
+    uint256 timeNextInvestmentEnd;
+
+    /// @notice Timestamp at which the next rider hire-request round starts.
+    uint256 timeNextRiderHireRequestStart;
+
+    /// @notice Timestamp at which the next rider hire-request round ends.
+    uint256 timeNextRiderHireRequestEnd;
+
+    // ---------------------------------------------------------------------
+    // Rider hire purchase
+    // ---------------------------------------------------------------------
+
+    /// @notice Indices (into the riders' request list) of hire requests for this investment.
+    uint256[] ridersHirePurchaseRequestsList;
+
+    /// @notice Maps a rider address to its index in {ridersHirePurchaseRequestsList}.
+    mapping(address => uint256) ridersHirePurchaseRequests;
+
+    /// @notice Address of the rider who has hired (or will hire) this asset.
+    address riderWhoHiredIt;
+
+    /// @notice Timestamp at which the rider's next periodic payment is due.
+    uint256 riderNextPayinDate;
+
+    /// @notice Aggregate record of the rider's payments toward this investment.
+    HPayingHistory riderPayinsHistory;
+
+    /// @notice Record of savings accumulated from the rider's payments (slashable).
+    HRiderSavingsHistory riderSavings;
+
+    /// @notice Per-investor payout history for this investment.
+    mapping(address => HInvestorPayoutsHistory) investorPayoutHistory;
+
+    /// @notice Aggregate payout history for this investment across all investors.
+    HInvestmentPayoutsHistory investmentPayoutHistory;
+
+    /// @notice Payout history for the contract/owner on this investment.
+    HOwnerPayoutsHistory contractPayoutHistory;
+
+    /// @notice Token id of the NFT title minted for the asset in this investment.
+    uint256 nftTokenId;
+
+    /// @notice Timestamp at which the rider completed all payments.
+    uint256 timeRiderCompletedPayments;
+
+    /// @notice Timestamp at which the NFT title was transferred to the rider.
+    uint256 timeNftTransferedToRider;
+}
+
+/// @title HInvestor
+/// @notice Profile of an investor participating in the platform.
+struct HInvestor {
+    /// @notice Wallet address of the investor.
+    address investorAddress;
+
+    /// @notice Investor's name.
+    bytes32 name;
+
+    /// @notice Investor's country.
+    bytes32 country;
+
+    /// @notice Investor's age in years; must be at least 18.
+    uint8 age;
+}
+
+/// @title HRider
+/// @notice Profile of a rider who acquires an asset through hire purchase.
+struct HRider {
+    /// @notice Wallet address of the rider.
+    address riderAddress;
+
+    /// @notice Rider's name.
+    bytes32 name;
+
+    /// @notice Rider's country.
+    bytes32 country;
+
+    /// @notice Rider's age in years; must be at least 18.
+    uint8 age;
+}
+
+/// @title HRiderHirePurchaseRequest
+/// @notice A rider's request to hire the asset backing a given investment.
+struct HRiderHirePurchaseRequest {
+    /// @notice Identifier of the investment the rider is requesting.
+    bytes32 investmentId;
+
+    /// @notice Timestamp at which the request was made.
+    uint256 timeRequested;
+}
+
+/// @title HRiderPayin
+/// @notice A single periodic payment made by a rider under a hire purchase.
+struct HRiderPayin {
+    /// @notice Identifier of the paying rider.
+    bytes32 riderId;
+
+    /// @notice Identifier of the investment the payment is for.
+    bytes32 investmentId;
+
+    /// @notice Amount paid in this instalment, in USDC.
+    uint256 amountPaid;
+
+    /// @notice Timestamp at which the payment was made.
+    uint256 timePaid;
+
+    /// @notice Address the payment was transferred into.
+    address addressPaidInto;
+}
+
+/// @title HPayingHistory
+/// @notice Aggregate record of a rider's payments toward one investment.
+struct HPayingHistory {
+    /// @notice Address of the rider.
+    address riderAddress;
+
+    /// @notice Total amount the rider has paid so far, in USDC.
+    uint256 totalAmountPaid;
+
+    /// @notice Total number of payments the rider has made.
+    uint256 totalNumberOfTimesPaid;
+
+    /// @notice Total amount the rider is required to pay over the hire purchase, in USDC.
+    uint256 targetTotalPay;
+}
+
+/// @title HOwnerPayout
+/// @notice A single payout made to the contract/owner.
+struct HOwnerPayout {
+    /// @notice Identifier of the investment the payout came from.
+    bytes32 investmentId;
+
+    /// @notice Amount paid out, in USDC.
+    uint256 amountPaid;
+
+    /// @notice Timestamp at which the payout was made.
+    uint256 timePaid;
+
+    /// @notice Address the payout was transferred into.
+    address addressPaidInto;
+}
+
+/// @title HOwnerPayoutsHistory
+/// @notice Aggregate record of payouts made to the contract/owner.
+struct HOwnerPayoutsHistory {
+    /// @notice Total amount paid out so far, in USDC.
+    uint256 totalAmountPaid;
+
+    /// @notice Total number of payouts made.
+    uint256 totalNumberOfTimesPaid;
+}
+
+/// @title HInvestorPayout
+/// @notice A single payout made to an investor.
+struct HInvestorPayout {
+    /// @notice Identifier of the investment the payout came from.
+    bytes32 investmentId;
+
+    /// @notice Amount paid out, in USDC.
+    uint256 amountPaid;
+
+    /// @notice Timestamp at which the payout was made.
+    uint256 timePaid;
+
+    /// @notice Address the payout was transferred into.
+    address addressPaidInto;
+}
+
+/// @title HInvestorPayoutsHistory
+/// @notice Aggregate record of a single investor's payouts for one investment.
+struct HInvestorPayoutsHistory {
+    /// @notice Address of the investor.
+    address investorAddress;
+
+    /// @notice Identifier of the investment.
+    bytes32 investmentId;
+
+    /// @notice Total amount paid to the investor so far, in USDC.
+    uint256 totalAmountPaid;
+
+    /// @notice Total number of payouts made to the investor.
+    uint256 totalNumberOfTimesPaid;
+
+    /// @notice Total amount the investor is due to receive over time, in USDC.
+    uint256 targetTotalPay;
+}
+
+/// @title HInvestmentPayoutsHistory
+/// @notice Aggregate record of all payouts made on one investment.
+struct HInvestmentPayoutsHistory {
+    /// @notice Identifier of the investment.
+    bytes32 investmentId;
+
+    /// @notice Total amount paid out so far on the investment, in USDC.
+    uint256 totalAmountPaid;
+
+    /// @notice Total number of payouts made on the investment.
+    uint256 totalNumberOfTimesPaid;
+
+    /// @notice Total amount due to be paid out on the investment, in USDC.
+    uint256 targetTotalPay;
+}
+
+/// @title HRiderSavingsHistory
+/// @notice Record of a rider's savings for one investment.
+/// @dev    A portion of every periodic payment is set aside as savings. The savings
+///         can be slashed if the rider defaults or pays late, and are refunded in
+///         full if the rider stays committed through the end of the hire purchase,
+///         giving them capital for repairs and cash once they own the vehicle.
+struct HRiderSavingsHistory {
+    /// @notice Address of the rider.
+    address riderAddress;
+
+    /// @notice Total amount saved so far, in USDC.
+    uint256 totalAmountSaved;
+
+    /// @notice Individual savings entries.
+    HRiderSavings[] savings;
+}
+
+/// @title HRiderSavings
+/// @notice A single savings entry made by a rider.
+struct HRiderSavings {
+    /// @notice Address of the rider.
+    address riderAddress;
+
+    /// @notice Amount saved in this entry, in USDC.
+    uint256 amountSaved;
+
+    /// @notice Timestamp at which the amount was saved.
+    uint256 timeSaved;
+}
+
 //</editor-fold desc="Structs">
 
 //<editor-fold desc="Enums">
+
+/// @title HInvestmentType
+/// @notice Identifies which investor tier a position belongs to.
+enum HInvestmentType {
+    /// @notice Senior investor: paid first, with lower risk and lower reward.
+    Senior,
+    /// @notice Junior investor: paid after senior investors, with higher risk and higher reward.
+    Junior
+}
+
+/// @title HInvestmentStatus
+/// @notice Lifecycle states of an investment opportunity.
+enum HInvestmentStatus {
+    /// @notice Investment added but investing has not begun.
+    Pending,
+    /// @notice Investors can currently invest.
+    AcceptingInvestments,
+    /// @notice All required investors are in place.
+    InvestmentDone,
+    /// @notice Riders can now request to hire the asset.
+    AcceptingRiders,
+    /// @notice A rider has been hired and is making periodic payments.
+    Hired,
+    /// @notice Rider finished paying and the NFT title has been transferred.
+    Complete
+}
 
 //</editor-fold desc="Enums">
 
