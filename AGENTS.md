@@ -10,6 +10,10 @@ Conventions and context for the Henriable Solidity codebase. Follow these every 
   (e.g. `cost_price` -> `costPrice`), fix obvious typos, and treat the "Avoid" examples
   below as authoritative style. Surface deviations and ambiguities instead of guessing
   silently.
+- Preserve the author's whitespace in `Henriable.md` exactly: keep the blank lines and the
+  trailing two-space markdown line breaks they use for readability. When editing that
+  document, never strip, trim, or reflow that spacing — a tool that rewrites the file must
+  carry it over unchanged.
 
 ## Tooling
 
@@ -73,11 +77,12 @@ if (investmentNotPending) {
 - Every struct, enum and error lives here. Keep the editor-fold sections
   (Constants, Structs, Enums, Errors, Helper Functions).
 - Use camelCase field names; document each field with NatSpec.
-- Solidity structs cannot inherit: inline a source struct's fields (e.g. `HInvestment`
-  inlines `HHalfInvestment`).
+- Solidity structs cannot inherit: combine the source struct's fields into the target
+  struct and demarcate the groups with editor-folds instead of splitting structs (e.g.
+  `HInvestment` has `Fields: Admin Supplied` and `Fields: Contract Filled`).
 - A struct containing a mapping cannot be an external/public parameter or return value.
-  Split such structs into field-tuple getters, and use a mapping-free input struct for
-  external creation parameters.
+  Pass its individual fields as external arguments instead (do not add a mapping-free
+  input struct unless the user approves it).
 
 ## States and getters (`src/helpers/HHelper.sol`)
 
