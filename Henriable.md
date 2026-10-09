@@ -93,58 +93,47 @@
       9. junior\_investor\_profit: (uint256) (total profit the investor would make over time.)  
       10. total\_number\_of\_senior\_investors\_needed: (uint256) (The total number of senior investors needed)  
       11. total\_number\_of\_junior\_investors\_needed: (uint256) (The total number of junior investors needed)  
-   2. HHalfInvestment  
-      1. investmentId: (bytes32) (unique investment slot ID)   
-      2. active: (bool) (Can only be updated only if no investor has invested in it)  
-      3. assetId: (bytes256) (The asset ID to invest in)  
-      4.   
-      5. totalSeniorInvestorsNeeded: (uint256)  
-      6. totalJuniorInvestorsNeeded: (uint256)  
-      7.   
-      8. seniorInvestorsList: Array of investor addresses  
-      9. seniorInvestors: mapping(investorAddress \=\> investorIndex)  
-      10. juniorInvestorsList: Array of investor addresses  
-      11. juniorInvestors: mapping(investorAddress \=\> investorIndex)  
-      12. investmentsDoneAt: uint256  
-      13.   
-      14. riderInitalBuyinUsd: (uint256)    
-      15. periodicRiderPayingInImutes: uint256  
-      16. minimumRiderPeriodicPayingsUsd: uint256  
-      17.    
-      18. status: (HInvestmentStatus)  
-      19. 
+   2. ### HInvestment {#hinvestment}
 
-   3. ### HInvestment {#hinvestment}
+      1. Single struct. Solidity structs cannot inherit (no TypeScript-style `extends`), so the
+         admin-supplied settings and the contract-filled fields are combined here. In code
+         they are grouped with editor-folds: "Fields: Admin Supplied" and "Fields: Contract Filled".
 
-      1. …HHalfInvestment  
-      2.    
-      3. timeNextInvestmentStart: (uint256) (Time the next investment round is allowed to start 
+      2. #### Fields: Admin Supplied
 
-      4. #### timeNextInvestmentEnd: (uint256) (Time the next investment round would end)
+         1. investmentId: (bytes32) (unique investment slot ID)
+         2. assetId: (bytes32) (The asset ID to invest in)
+         3. totalSeniorInvestorsNeeded: (uint256)
+         4. totalJuniorInvestorsNeeded: (uint256)
+         5. riderInitialBuyinUsd: (uint256)
+         6. periodicRiderPayingInMinutes: (uint256)
+         7. minimumRiderPeriodicPayingsUsd: (uint256)
 
-      5. #### timeNextRiderHireRequestStart: (uint256) (Time the next hire purchase request round is scheduled to start)
+      3. #### Fields: Contract Filled
 
-      6. #### timeNextRiderHireRequestEnd: (uint256) (Time the next hire purchase request round is scheduled to end)
-
-      7.   
-      8. ridersHirePurchaseRequestsList: Array of (uint256): uint256 points to the specific rider hire-purchase request.   
-      9.  ridersHirePurchaseRequests: mapping(riderAddress: uint256 (the index of the hire-purchase request)  
-      10.   
-      11. riderWhoHiredIt: address (the address of the rider who will/or hired it)  
-      12. riderNextPayinDate: uint256  
-      13.   
-      14. riderPayinsHistory: (HPayingHistory)  
-      15. riderSavings: HRiderSavingsHistory   
-      16.   
-      17. investorPayoutHistory: mapping(investorAddress, HPayoutsHistory)  
-      18. investmentPayoutHistory: (HInvestmentPayoutsHistory)  
-      19. contractPayoutHistory: ()  
-      20.   
-      21. nftTokenId: (Token id of the newly minted NFT title for the asset being invested in here)  
-      22.    
-      23. timeRiderCompletedPayments: (uint256)  
-      24. timeNftTransferedToRider: (uint256)  
-      25.  
+         1. active: (bool) (forced true on creation; can only be updated while no investor has invested in it)
+         2. seniorInvestorsList: Array of investor addresses
+         3. seniorInvestors: mapping(investorAddress => investorIndex)
+         4. juniorInvestorsList: Array of investor addresses
+         5. juniorInvestors: mapping(investorAddress => investorIndex)
+         6. investmentsDoneAt: uint256
+         7. status: (HInvestmentStatus)
+         8. timeNextInvestmentStart: (uint256) (Time the next investment round is allowed to start)
+         9. timeNextInvestmentEnd: (uint256) (Time the next investment round would end)
+         10. timeNextRiderHireRequestStart: (uint256) (Time the next hire purchase request round is scheduled to start)
+         11. timeNextRiderHireRequestEnd: (uint256) (Time the next hire purchase request round is scheduled to end)
+         12. ridersHirePurchaseRequestsList: Array of (uint256): points to the specific rider hire-purchase request.
+         13. ridersHirePurchaseRequests: mapping(riderAddress => uint256) (the index of the hire-purchase request)
+         14. riderWhoHiredIt: address (the address of the rider who will/or hired it)
+         15. riderNextPayinDate: uint256
+         16. riderPayinsHistory: (HPayingHistory)
+         17. riderSavings: HRiderSavingsHistory
+         18. investorPayoutHistory: mapping(investorAddress => HInvestorPayoutsHistory)
+         19. investmentPayoutHistory: (HInvestmentPayoutsHistory)
+         20. contractPayoutHistory: (HOwnerPayoutsHistory)
+         21. nftTokenId: (Token id of the newly minted NFT title for the asset being invested in here)
+         22. timeRiderCompletedPayments: (uint256)
+         23. timeNftTransferedToRider: (uint256)
 
    4. ### HInvestor
 
@@ -279,7 +268,7 @@
 
       4. #### investments 
 
-         1. mapping(investmentId \=\>  uint256)
+         1. mapping(investmentId \=\> uint256) (stored as index + 1; 0 means "not registered")
 
       5. #### investorsList 
 
@@ -408,13 +397,22 @@
             1. Function  
                1. Allow the admin to add investments that can be invested in.  
             2. Param  
-               1. \_param:  HHalfInvestment  
+               1. \_investmentId: (bytes32) (must be unique and non-zero)
+               2. \_assetId: (bytes32) (must reference a registered, active asset)
+               3. \_totalSeniorInvestorsNeeded: (uint256) (must be non-zero)
+               4. \_totalJuniorInvestorsNeeded: (uint256) (must be non-zero)
+               5. \_riderInitialBuyinUsd: (uint256) (must be non-zero)
+               6. \_periodicRiderPayingInMinutes: (uint256) (must be non-zero)
+               7. \_minimumRiderPeriodicPayingsUsd: (uint256) (must be non-zero)
+               8. Note: {HInvestment} contains mappings, so it cannot be passed as a calldata
+                  parameter; the admin-supplied settings are passed as individual arguments.
             3. Features  
                1. Verify all param values  
-               2. Verify and calculate that param values and asset settings match to ensure payments to investors. Use calcInvestmentOppurtunityLevel1SettingsAccuracy()   
+               2. Verify and calculate that param values and asset settings match to ensure payments to investors. Use calcInvestmentOpportunityLevel1SettingsAccuracy()   
                3. Update States   
                   1. investmentsList   
                   2. investments   
+                  3. assetInvestments   
                4.   
             4. 
 
@@ -699,14 +697,12 @@
             1.   
          3. Features  
             1.    
-      3. calcInvestmentOppurtunityLevel1SettingsAccuracy()  
+      3. calcInvestmentOpportunityLevel1SettingsAccuracy()  
          1. Function  
             1. This would calculate to ensure setting submitted by the admin to create an investment would work to ensure accurate payouts.  
+            2. Placeholder: currently a stub that always returns true.  
          2. Parameters  
-            1.   \_investor: HInvestor    
-            2. \_investmentType: HInvestmentType  
-            3. \_ investmentOpportunityId: (bytes32)  
-            4. \_approvedUSDAmount: (uint256)  
+            1. HInvestment (the staged investment to validate)  
          3. Features  
             1.  
 
