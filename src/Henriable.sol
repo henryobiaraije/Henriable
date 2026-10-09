@@ -678,34 +678,23 @@ contract Henriable is HHelper {
             if (notTheHiredRider) revert HRiderNotHired(_investmentId, msg.sender);
         }
 
+        // The asset defines the total the rider owes ({HAsset.sellPrice}) and the fixed
+        // per-period extra charge, which is saved for them and refunded on ownership transfer.
+        HAsset storage asset = getAssetStorage(investment.assetId);
+        uint256 riderSavingsAmount = asset.riderSlashableRepayableExtraCharge;
+
         HPayingHistory storage payinsHistory = investment.riderPayinsHistory;
 
         // The rider must not have finished paying.
         {
-            bool paymentsCompleted = payinsHistory.totalAmountPaid >= payinsHistory.targetTotalPay;
+            bool paymentsCompleted = payinsHistory.totalAmountPaid >= asset.sellPrice;
             if (paymentsCompleted) revert HRiderPaymentsCompleted(_investmentId);
         }
 
-        // The rider also pays the asset's fixed per-period extra charge, which is saved
-        // for them (and refunded on ownership transfer), so it is collected on top of the
-        // hire-purchase amount.
-        HAsset storage asset = getAssetStorage(investment.assetId);
-        uint256 riderSavingsAmount = asset.riderSlashableRepayableExtraCharge;
-
-        // The payment must meet the minimum for this period, except for the final
-        // instalment: when the remaining balance is below the minimum, only the
-        // remaining balance is due and a smaller payment is accepted. The per-period
-        // savings charge is always required on top of that.
+        // The payment must meet the amount due for this period (the periodic minimum, capped
+        // by the outstanding balance on the final instalment, plus the savings charge).
         {
-            uint256 remainingToPay = payinsHistory.targetTotalPay - payinsHistory.totalAmountPaid;
-            uint256 requiredThisPayment = investment.minimumRiderPeriodicPayingsUsd;
-
-            bool remainingBelowMinimum = remainingToPay < requiredThisPayment;
-            if (remainingBelowMinimum) {
-                requiredThisPayment = remainingToPay;
-            }
-
-            requiredThisPayment += riderSavingsAmount;
+            uint256 requiredThisPayment = calcRiderAmountToPayNow(investment, asset);
 
             bool belowMinimum = _approvedUSD < requiredThisPayment;
             if (belowMinimum) revert HRiderPayinBelowMinimum(_approvedUSD, requiredThisPayment);
@@ -742,8 +731,8 @@ contract Henriable is HHelper {
         HSharingBreakdown memory breakdown = calcSharingFormula(_approvedUSD, riderSavingsAmount);
         recordDistribution(investment, _investmentId, breakdown);
 
-        // Record completion once the rider has paid the target.
-        bool riderCompleted = payinsHistory.totalAmountPaid >= payinsHistory.targetTotalPay;
+        // Record completion once the rider has paid the asset's total.
+        bool riderCompleted = payinsHistory.totalAmountPaid >= asset.sellPrice;
         if (riderCompleted) {
             investment.timeRiderCompletedPayments = block.timestamp;
         }
@@ -782,10 +771,11 @@ contract Henriable is HHelper {
             if (notTheHiredRider) revert HRiderNotHired(_investmentId, _rider);
         }
 
-        // The rider must have paid the full target before ownership changes hands.
+        // The rider must have paid the asset's total before ownership changes hands.
         {
+            HAsset storage asset = getAssetStorage(investment.assetId);
             HPayingHistory storage payinsHistory = investment.riderPayinsHistory;
-            bool riderNotCompleted = payinsHistory.totalAmountPaid < payinsHistory.targetTotalPay;
+            bool riderNotCompleted = payinsHistory.totalAmountPaid < asset.sellPrice;
             if (riderNotCompleted) revert HRiderPaymentsNotCompleted(_investmentId);
         }
 

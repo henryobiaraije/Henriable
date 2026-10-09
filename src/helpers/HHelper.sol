@@ -170,31 +170,61 @@ contract HHelper is Ownable {
         return false;
     }
 
-    /// @notice Checks that an asset's pricing settings can pay every investor and still
-    ///         leave the owner a surplus.
-    /// @dev    The investor pools must fund the asset exactly, i.e. every investor's
-    ///         buying price times its slot count must sum to {HAsset.costPrice}, and the
-    ///         rider's {HAsset.sellPrice} must cover that principal plus the profits
-    ///         promised to both pools. The rider's slashable savings
+    /// @notice Checks that an asset's pricing settings can pay every investor and the owner.
+    /// @dev    The investor pools must cover the asset: every investor's buying price times
+    ///         its slot count must be at least {HAsset.costPrice}, and the rider's
+    ///         {HAsset.sellPrice} must cover that principal plus the profits promised to both
+    ///         pools plus {HAsset.ownerProfit}. The rider's slashable savings
     ///         ({HAsset.riderSlashableRepayableExtraCharge}) is charged on top of the sell
-    ///         price and refunded later, so it is deliberately excluded here. Whatever is
-    ///         left of the sell price after the investor payouts is the owner's share.
+    ///         price and refunded later, so it is deliberately excluded here.
     /// @param asset The asset configuration to validate.
-    /// @return True when the pools fund the cost price and the sell price covers the
-    ///         investor principal and profits.
+    /// @return True when the pools cover the cost price and the sell price covers the
+    ///         investor principal, their profits and the owner's profit.
     function isAssetSettingsCorrect(HAsset memory asset) internal pure returns (bool) {
+
+        //<editor-fold desc="Get Senior/Junior Buying amounts">
+
+        // Total the senior pool pays to buy in: per-investor price x number of senior slots.
         uint256 seniorInvestorsBuying = asset.oneSeniorInvestorBuyingPrice * asset.totalNumberOfSeniorInvestorsNeeded;
+
+        // Total the junior pool pays to buy in: per-investor price x number of junior slots.
         uint256 juniorInvestorsBuying = asset.oneJuniorInvestorBuyingPrice * asset.totalNumberOfJuniorInvestorsNeeded;
+
+        // Everything the investors pay in: senior buying + junior buying.
         uint256 investorsBuying = seniorInvestorsBuying + juniorInvestorsBuying;
 
+        //</editor-fold desc="Get Senior/Junior Buying amounts">
+
+        //<editor-fold desc="Get Senior/Junior Profits">
+
+        // Profit promised to the whole senior pool: per-investor profit x number of senior slots.
         uint256 seniorInvestorsProfit = asset.oneSeniorInvestorProfit * asset.totalNumberOfSeniorInvestorsNeeded;
+
+        // Profit promised to the whole junior pool: per-investor profit x number of junior slots.
         uint256 juniorInvestorsProfit = asset.oneJuniorInvestorProfit * asset.totalNumberOfJuniorInvestorsNeeded;
-        uint256 investorsPayout = investorsBuying + seniorInvestorsProfit + juniorInvestorsProfit;
 
-        bool investorsFundCostPrice = investorsBuying == asset.costPrice;
-        bool sellPriceCoversInvestors = asset.sellPrice >= investorsPayout;
+        //</editor-fold desc="Get Senior/Junior Profits">
 
-        return investorsFundCostPrice && sellPriceCoversInvestors;
+        //<editor-fold desc="Gather Total expected Payout">
+        // The sell price must cover all of this: investor principal + investor profits + owner profit.
+        uint256 totalPayout = investorsBuying + seniorInvestorsProfit + juniorInvestorsProfit + asset.ownerProfit;
+        //</editor-fold desc="Gather Total expected Payout">
+
+        //<editor-fold desc="Ensure asset costPrice must be covered in full by investor investments.">
+        // First check: the investors must at least fund what the asset costs to buy.
+        bool investorsCoverCostPrice = investorsBuying >= asset.costPrice;
+        //</editor-fold desc="Ensure asset costPrice must be covered in full by investor investments.">
+
+        //<editor-fold desc="Ensure the asset sellPrice must be covered by full rider payments">
+        // Second check: the rider's total payment must at least cover the total payout due.
+        bool sellPriceCoversPayouts = asset.sellPrice >= totalPayout;
+        //</editor-fold desc="Ensure the asset sellPrice must be covered by full rider payments">
+
+        //<editor-fold desc="Return true if calculation is correct">
+
+        // The asset settings are correct only when both checks pass.
+        return investorsCoverCostPrice && sellPriceCoversPayouts;
+        //</editor-fold desc="Return true if calculation is correct">
     }
 
     //</editor-fold desc="Is...">
@@ -236,6 +266,37 @@ contract HHelper is Ownable {
             juniorInvestorsAmount: juniorInvestorsAmount,
             riderSavingsAmount: riderSavingsAmount
         });
+    }
+
+    /// @notice Computes the payment a rider owes for the next instalment of an investment.
+    /// @dev    The rider owes {HAsset.sellPrice} in total and the outstanding balance is that
+    ///         minus what they have paid. The periodic minimum is capped by the outstanding
+    ///         balance on the final instalment, then the asset's per-period savings charge is
+    ///         always added on top so the rider's refundable savings keep accumulating.
+    /// @param investment The investment being paid (storage reference).
+    /// @param asset The asset backing the investment (storage reference).
+    /// @return The amount due for the next instalment, in USDC.
+    function calcRiderAmountToPayNow(HInvestment storage investment, HAsset storage asset)
+    internal
+    view
+    returns (uint256)
+    {
+        uint256 totalAmountToPay = asset.sellPrice;
+        uint256 totalAmountPaid = investment.riderPayinsHistory.totalAmountPaid;
+
+        uint256 remainingToPay = 0;
+        bool hasOutstandingBalance = totalAmountPaid < totalAmountToPay;
+        if (hasOutstandingBalance) {
+            remainingToPay = totalAmountToPay - totalAmountPaid;
+        }
+
+        uint256 requiredThisPayment = investment.minimumRiderPeriodicPayingsUsd;
+        bool remainingBelowMinimum = remainingToPay < requiredThisPayment;
+        if (remainingBelowMinimum) {
+            requiredThisPayment = remainingToPay;
+        }
+
+        return requiredThisPayment + asset.riderSlashableRepayableExtraCharge;
     }
 
     //</editor-fold desc="Calculators">
@@ -356,7 +417,7 @@ contract HHelper is Ownable {
     /// @param investmentId The id of the investment.
     /// @param breakdown The owner/investor/savings split of the payment.
     function recordDistribution(HInvestment storage investment, bytes32 investmentId, HSharingBreakdown memory breakdown)
-        internal
+    internal
     {
         // Owner accounting.
         if (breakdown.ownerAmount != 0) {
@@ -970,6 +1031,31 @@ contract HHelper is Ownable {
     /// @return The 1-based indices into the global rider payins list.
     function getRiderPayinIndexes(bytes32 investmentId) external view returns (uint256[] memory) {
         return getInvestmentStorage(investmentId).riderPayinIndexes;
+    }
+
+    /// @notice Returns how much the calling rider must pay for the next instalment of an
+    ///         investment, including the asset's per-period savings charge.
+    /// @dev    Reads the investment's rider payment history for the outstanding balance.
+    ///         Returns 0 when the caller is not the investment's hired rider or the rider has
+    ///         already met the target total.
+    /// @param investmentId The id of the investment.
+    /// @return The amount the caller should pay now, in USDC.
+    function getRiderAmountToPayNow(bytes32 investmentId) external view returns (uint256) {
+        HInvestment storage investment = getInvestmentStorage(investmentId);
+
+        bool notTheHiredRider = msg.sender != investment.riderWhoHiredIt;
+        if (notTheHiredRider) {
+            return 0;
+        }
+
+        HAsset storage asset = getAssetStorage(investment.assetId);
+
+        bool paymentsCompleted = investment.riderPayinsHistory.totalAmountPaid >= asset.sellPrice;
+        if (paymentsCompleted) {
+            return 0;
+        }
+
+        return calcRiderAmountToPayNow(investment, asset);
     }
 
     // --------------------- Investor payout getters -------------------

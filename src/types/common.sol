@@ -33,9 +33,9 @@ struct HAsset {
     /// @dev    The amount required to acquire one unit of the asset.
     uint256 costPrice;
 
-    /// @notice Total amount the rider pays over the life of the hire purchase, in USDC.
+    /// @notice Total amount the rider would need to pay over the life of the hire purchase, in USDC.
     /// @dev    Must be large enough to cover the asset cost plus the profits
-    ///         promised to both the senior and junior investor pools.
+    ///         promised to both the senior and junior investor pools (except the fixed extra charge for rider slashable, refundable, savings).
     uint256 sellPrice;
 
     /// @notice Buying price contributed by one senior investor, in USDC.
@@ -60,6 +60,9 @@ struct HAsset {
     ///         This would help with repairs and reward for their faithfulness through the process.
     ///         If they default, these savings could be slashed as penalty and to fund investor payouts.
     uint256 riderSlashableRepayableExtraCharge;
+
+    /// @notice Profit owner will earn over time.
+    uint256 ownerProfit;
 
     /// @notice Number of senior investor slots required to fund one unit of this asset.
     /// @dev    Used to know when the senior pool is fully funded.
@@ -267,6 +270,8 @@ struct HSharingBreakdown {
 
 /// @title HPayingHistory
 /// @notice Aggregate record of a rider's payments toward one investment.
+/// @dev    The total the rider owes is {HAsset.sellPrice}; this struct only tracks what
+///         they have paid so far against it.
 struct HPayingHistory {
     /// @notice Address of the rider.
     address riderAddress;
@@ -276,9 +281,6 @@ struct HPayingHistory {
 
     /// @notice Total number of payments the rider has made.
     uint256 totalNumberOfTimesPaid;
-
-    /// @notice Total amount the rider is required to pay over the hire purchase, in USDC.
-    uint256 targetTotalPay;
 }
 
 /// @title HOwnerPayout
