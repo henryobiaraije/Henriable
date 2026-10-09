@@ -11,6 +11,7 @@ import {
 HAsset,
 HAssetDoesNotExist,
 HInvestment,
+HInvestmentDoesNotExist,
 HInvestmentStatus,
 HInvestor,
 HRider,
@@ -70,7 +71,9 @@ contract HHelper is Ownable {
     /// @notice All investment opportunities ever created.
     HInvestment[] internal investmentsList;
 
-    /// @notice Maps an investment id to its index in {investmentsList}.
+    /// @notice Maps an investment id to its index in {investmentsList}, stored as
+    ///         `index + 1`. Encoding the position as `index + 1` makes 0 mean
+    ///         "not registered" for an O(1) existence check and lookup.
     mapping(bytes32 => uint256) internal investments;
 
     /// @notice All registered investors.
@@ -152,7 +155,7 @@ contract HHelper is Ownable {
         view
         returns (bool)
     {
-        HInvestmentStatus currentStatus = investmentsList[investments[investmentId]].status;
+        HInvestmentStatus currentStatus = getInvestmentStorage(investmentId).status;
         for (uint256 i = 0; i < statuses.length; i++) {
             if (currentStatus == statuses[i]) {
                 return true;
@@ -162,6 +165,20 @@ contract HHelper is Ownable {
     }
 
     //</editor-fold desc="Is...">
+
+    //<editor-fold desc="Calculators">
+
+    /// @notice Checks that the level-1 settings of a new investment opportunity are
+    ///         consistent with its asset, so the rider's payments can cover the
+    ///         profits promised to the senior and junior investor pools.
+    /// @dev    Placeholder: always returns true until the real accuracy math is
+    ///         implemented and reviewed. The investment parameter is intentionally unused.
+    /// @return True when the level-1 settings are accurate.
+    function calcInvestmentOpportunityLevel1SettingsAccuracy(HInvestment storage) internal pure returns (bool) {
+        return true;
+    }
+
+    //</editor-fold desc="Calculators">
 
     //<editor-fold desc="Getters">
 
@@ -243,10 +260,31 @@ contract HHelper is Ownable {
     }
 
     /// @notice Returns the index in {investmentsList} for an investment id.
+    /// @dev    Reverts if the investment is not registered.
     /// @param investmentId The id of the investment.
     /// @return The index into {investmentsList}.
     function getInvestmentIndex(bytes32 investmentId) external view returns (uint256) {
-        return investments[investmentId];
+        uint256 indexPlusOne = investments[investmentId];
+
+        bool investmentDoesNotExist = indexPlusOne == 0;
+        if (investmentDoesNotExist) revert HInvestmentDoesNotExist(investmentId);
+
+        return indexPlusOne - 1;
+    }
+
+    /// @notice Returns a storage reference to a registered investment.
+    /// @dev    Hides the `index + 1` bookkeeping so callers can read or write fields
+    ///         directly, e.g. `getInvestmentStorage(id).active = false;`. Reverts if
+    ///         the investment is not registered.
+    /// @param investmentId The id of the investment.
+    /// @return A storage reference to the investment.
+    function getInvestmentStorage(bytes32 investmentId) internal view returns (HInvestment storage) {
+        uint256 indexPlusOne = investments[investmentId];
+
+        bool investmentDoesNotExist = indexPlusOne == 0;
+        if (investmentDoesNotExist) revert HInvestmentDoesNotExist(investmentId);
+
+        return investmentsList[indexPlusOne - 1];
     }
 
     /// @notice Returns the core (half-investment) fields of an investment.
@@ -362,7 +400,7 @@ contract HHelper is Ownable {
     view
     returns (uint256)
     {
-        return investmentsList[investments[investmentId]].seniorInvestors[investor];
+        return getInvestmentStorage(investmentId).seniorInvestors[investor];
     }
 
     /// @notice Returns a junior investor's index within an investment's junior list.
@@ -374,7 +412,7 @@ contract HHelper is Ownable {
     view
     returns (uint256)
     {
-        return investmentsList[investments[investmentId]].juniorInvestors[investor];
+        return getInvestmentStorage(investmentId).juniorInvestors[investor];
     }
 
     /// @notice Returns the rider hire-purchase request indices for an investment.
@@ -397,7 +435,7 @@ contract HHelper is Ownable {
     view
     returns (uint256)
     {
-        return investmentsList[investments[investmentId]].ridersHirePurchaseRequests[rider];
+        return getInvestmentStorage(investmentId).ridersHirePurchaseRequests[rider];
     }
 
     /// @notice Returns the rider payment history of an investment.
@@ -431,7 +469,7 @@ contract HHelper is Ownable {
     view
     returns (HInvestorPayoutsHistory memory)
     {
-        return investmentsList[investments[investmentId]].investorPayoutHistory[investor];
+        return getInvestmentStorage(investmentId).investorPayoutHistory[investor];
     }
 
     /// @notice Returns the aggregate payout history of an investment.
