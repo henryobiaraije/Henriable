@@ -18,6 +18,7 @@ HAssetNotActive,
 HInvestment,
 HInvestmentAlreadyExists,
 HInvestmentHasInvestors,
+HInvestmentInvalidEndTime,
 HInvestmentInvalidId,
 HInvestmentInvalidJuniorInvestorsNeeded,
 HInvestmentInvalidMinimumRiderPeriodicPayings,
@@ -25,6 +26,8 @@ HInvestmentInvalidPeriodicRiderPayingInMinutes,
 HInvestmentInvalidRiderInitialBuyin,
 HInvestmentInvalidSeniorInvestorsNeeded,
 HInvestmentInvalidSettings,
+HInvestmentInvalidStartTime,
+HInvestmentNotPending,
 HInvestmentStatus
 } from "./types/common.sol";
 import {HHelper} from "./helpers/HHelper.sol";
@@ -59,8 +62,6 @@ contract Henriable is HHelper {
     function actionAdminAddAsset(HAsset calldata _asset) external onlyOwner {
 
         //<editor-fold desc="Verify Parameters">
-
-
 
         // The id is the registry key, so it must be provided.
         bool assetIdMissing = _asset.id == bytes32(0);
@@ -287,6 +288,48 @@ contract Henriable is HHelper {
     }
 
     //</editor-fold desc="Action:Admin:Investment: Change investment status">
+
+    //<editor-fold desc="Action:Admin:Investment: Set next investment times">
+
+    /// @notice Sets the start and end of the next investment round for an investment.
+    /// @dev    Only the contract owner (admin) may call this.
+    ///         The opportunity must still be Pending and its asset active, and the
+    ///         round must be in the future with `_endTime` after `_startTime`.
+    ///         States updated: {investmentsList}.
+    /// @param _investmentId The id of the investment to schedule.
+    /// @param _startTime Timestamp at which the next investment round starts; must be in the future.
+    /// @param _endTime Timestamp at which the next investment round ends; must be after _startTime.
+    function actionAdminSetNextInvestmentTimes(bytes32 _investmentId, uint256 _startTime, uint256 _endTime)
+    external
+    onlyOwner
+    {
+        // Get the modifiable investment (reverts if it is not registered).
+        HInvestment storage investment = getInvestmentStorage(_investmentId);
+
+        // Times may only be set while the opportunity is still Pending.
+        bool investmentNotPending = investment.status != HInvestmentStatus.Pending;
+        if (investmentNotPending) revert HInvestmentNotPending(_investmentId);
+
+        // The backing asset must still be active, i.e. there must be an asset to invest in.
+        HAsset storage asset = getAssetStorage(investment.assetId);
+
+        bool assetNotActive = !asset.active;
+        if (assetNotActive) revert HAssetNotActive(investment.assetId);
+
+        // The round must start in the future...
+        bool startTimeNotInFuture = _startTime <= block.timestamp;
+        if (startTimeNotInFuture) revert HInvestmentInvalidStartTime(_startTime);
+
+        // ...and end after it starts.
+        bool endTimeNotAfterStartTime = _endTime <= _startTime;
+        if (endTimeNotAfterStartTime) revert HInvestmentInvalidEndTime(_startTime, _endTime);
+
+        // Apply the new round window.
+        investment.timeNextInvestmentStart = _startTime;
+        investment.timeNextInvestmentEnd = _endTime;
+    }
+
+    //</editor-fold desc="Action:Admin:Investment: Set next investment times">
 
     //</editor-fold desc="Actions">
 }

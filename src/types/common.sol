@@ -461,6 +461,19 @@ error HInvestmentHasInvestors(bytes32 id);
 ///         cover the profits promised to senior and junior investors.
 error HInvestmentInvalidSettings();
 
+/// @notice Thrown when times are set on an investment that is no longer Pending.
+/// @param id The investment id.
+error HInvestmentNotPending(bytes32 id);
+
+/// @notice Thrown when an investment round's start time is not in the future.
+/// @param startTime The invalid start timestamp.
+error HInvestmentInvalidStartTime(uint256 startTime);
+
+/// @notice Thrown when an investment round's end time is not after its start time.
+/// @param startTime The proposed start timestamp.
+/// @param endTime The invalid end timestamp.
+error HInvestmentInvalidEndTime(uint256 startTime, uint256 endTime);
+
 //</editor-fold desc="Errors">
 
 //<editor-fold desc="Helper Functions">
