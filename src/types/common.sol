@@ -440,9 +440,26 @@ enum HInvestmentStatus {
     Complete
 }
 
+
 //</editor-fold desc="Enums">
 
 //<editor-fold desc="Errors">
+
+/// @notice Thrown when an asset is registered without a non-zero id.
+error HAssetInvalidId();
+
+/// @notice Thrown when registering an asset whose id is already in use.
+/// @param id The already-existing asset id.
+error HAssetAlreadyExists(bytes32 id);
+
+/// @notice Thrown when an asset is registered without a name.
+error HAssetInvalidName();
+
+/// @notice Thrown when an asset is registered with a zero cost price.
+error HAssetInvalidCostPrice();
+
+/// @notice Thrown when an asset is registered with a zero sell price.
+error HAssetInvalidSellPrice();
 
 //</editor-fold desc="Errors">
 

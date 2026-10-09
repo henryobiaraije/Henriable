@@ -31,8 +31,13 @@ import {
 contract HHelper is Ownable {
     //<editor-fold desc="States">
 
-    /// @notice Registry of every asset that can be invested in, keyed by asset id.
-    mapping(bytes32 => HAsset) internal assets;
+    /// @notice All registered assets, in insertion order.
+    HAsset[] internal assetsList;
+
+    /// @notice Maps an asset id to its index in {assetsList}, stored as `index + 1`.
+    /// @dev    Encoding the position as `index + 1` makes 0 mean "not registered", so
+    ///         this single mapping provides an O(1) existence check and lookup.
+    mapping(bytes32 => uint256) internal assets;
 
     /// @notice USDC token used for all investments, payouts and payments.
     IERC20 internal ownerUsdToken;
@@ -125,11 +130,36 @@ contract HHelper is Ownable {
         return ownerUsdToken;
     }
 
-    /// @notice Returns an asset's configuration.
+    /// @notice Returns the total number of registered assets.
+    /// @return The length of {assetsList}.
+    function getAssetsCount() external view returns (uint256) {
+        return assetsList.length;
+    }
+
+    /// @notice Returns the asset registered at an index.
+    /// @param index The index into {assetsList}.
+    /// @return The {HAsset} at the given index.
+    function getAssetAt(uint256 index) external view returns (HAsset memory) {
+        return assetsList[index];
+    }
+
+    /// @notice Returns an asset's configuration by id.
     /// @param assetId The id of the asset.
     /// @return The {HAsset} for the given id (zero-filled if it does not exist).
     function getAsset(bytes32 assetId) external view returns (HAsset memory) {
-        return assets[assetId];
+        uint256 indexPlusOne = assets[assetId];
+        if (indexPlusOne == 0) {
+            HAsset memory notFound;
+            return notFound;
+        }
+        return assetsList[indexPlusOne - 1];
+    }
+
+    /// @notice Returns whether an asset id is registered.
+    /// @param assetId The id of the asset.
+    /// @return True if the asset is registered.
+    function getAssetExists(bytes32 assetId) external view returns (bool) {
+        return assets[assetId] != 0;
     }
 
     /// @notice Returns the indices of the investments created for an asset.
