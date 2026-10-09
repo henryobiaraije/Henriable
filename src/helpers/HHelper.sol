@@ -186,11 +186,32 @@ contract HHelper is Ownable {
 
     /// @notice Advances an investment's lifecycle status when its current state and
     ///         timing allow it.
-    /// @dev    Placeholder: currently a no-op stub. Once implemented, this is the sole
-    ///         place that mutates {HInvestment}.status (e.g. Pending -> AcceptingInvestments
-    ///         when the round window opens, and -> InvestmentDone when the slots fill).
-    ///         The investment id parameter is intentionally unused for now.
-    function maybeUpdateInvestmentStatus(bytes32) internal pure {}
+    /// @dev    State machine: this is the sole place that mutates {HInvestment}.status.
+    ///         Only a Pending opportunity can advance here; once the admin-set window
+    ///         has opened (`timeNextInvestmentStart <= now <= timeNextInvestmentEnd`)
+    ///         it moves Pending -> AcceptingInvestments. It runs lazily, e.g. when an
+    ///         investor calls actionInvest, so the status catches up on first use.
+    ///         After each status update it returns.
+    /// @param investmentId The id of the investment to update.
+    function maybeUpdateInvestmentStatus(bytes32 investmentId) internal {
+        HInvestment storage investment = getInvestmentStorage(investmentId);
+
+        HInvestmentStatus currentStatus = investment.status;
+
+        if (currentStatus == HInvestmentStatus.Pending) {
+            // The round may only open once the admin has set a start time and now is
+            // within the [start, end] window.
+            bool investmentTimeSet = investment.timeNextInvestmentStart != 0;
+            bool withinInvestmentWindow = investmentTimeSet
+                && block.timestamp >= investment.timeNextInvestmentStart
+                && block.timestamp <= investment.timeNextInvestmentEnd;
+
+            if (withinInvestmentWindow) {
+                investment.status = HInvestmentStatus.AcceptingInvestments;
+                return;
+            }
+        }
+    }
 
     //</editor-fold desc="Maybe">
 
