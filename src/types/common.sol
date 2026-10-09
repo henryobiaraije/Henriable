@@ -452,6 +452,15 @@ error HAssetInvalidId();
 /// @param id The already-existing asset id.
 error HAssetAlreadyExists(bytes32 id);
 
+/// @notice Thrown when an operation references an asset id that is not registered.
+/// @param id The unknown asset id.
+error HAssetDoesNotExist(bytes32 id);
+
+/// @notice Thrown when an asset's status is changed while one of its investments
+///         is no longer pending.
+/// @param id The asset id.
+error HAssetHasNonPendingInvestments(bytes32 id);
+
 /// @notice Thrown when an asset is registered without a name.
 error HAssetInvalidName();
 
