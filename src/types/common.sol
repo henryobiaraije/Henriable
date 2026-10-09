@@ -454,7 +454,7 @@ error HInvestmentInvalidPeriodicRiderPayingInMinutes();
 error HInvestmentInvalidMinimumRiderPeriodicPayings();
 
 /// @notice Thrown when an investment's level-1 settings are not accurate enough to
-///         cover the profits promised to senior and junior investors.
+///         cover the profits promised to senior and junior investors and owner too.
 error HInvestmentInvalidSettings();
 
 //</editor-fold desc="Errors">
