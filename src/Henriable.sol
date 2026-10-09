@@ -29,6 +29,7 @@ HInvestmentInvalidSettings,
 HInvestmentInvalidStartTime,
 HInvestmentNoOpenSlot,
 HInvestmentNotAccepting,
+HInvestmentNotAcceptingRiders,
 HInvestmentNotActive,
 HInvestmentNotDone,
 HInvestmentNotPending,
@@ -36,7 +37,14 @@ HInvestmentStatus,
 HInvestmentType,
 HInvestor,
 HInvestorAlreadyInvested,
-HInvestorInvalidAge
+HInvestorInvalidAge,
+HRider,
+HRiderAlreadyRegistered,
+HRiderHirePurchaseRequest,
+HRiderInsufficientInitialBuyin,
+HRiderInvalidAge,
+HRiderInvalidCountry,
+HRiderInvalidName
 } from "./types/common.sol";
 import {HHelper} from "./helpers/HHelper.sol";
 //</editor-fold desc="Imports">
@@ -130,17 +138,15 @@ contract Henriable is HHelper {
         // Get the modifiable asset.
         HAsset storage asset = getAssetStorage(_assetId);
 
-        // Indices (into `investmentsList`) of every investment built on this asset.
-        uint256[] storage investmentIndexes = assetInvestments[_assetId];
-
         // The asset may only change status while every dependent investment is still
         // Pending, so build the set of allowed statuses once.
         HInvestmentStatus[] memory allowedStatuses = new HInvestmentStatus[](1);
         allowedStatuses[0] = HInvestmentStatus.Pending;
 
         // Walk each dependent investment.
-        for (uint256 i = 0; i < investmentIndexes.length; i++) {
-            HInvestment storage inv = investmentsList[investmentIndexes[i]];
+        uint256 assetInvestmentsCount = assetInvestments[_assetId].length;
+        for (uint256 i = 0; i < assetInvestmentsCount; i++) {
+            HInvestment storage inv = getAssetInvestmentStorage(_assetId, i);
 
             // The asset may only change status while every dependent investment is
             // still Pending. Once any investment has progressed beyond Pending, the
@@ -254,8 +260,9 @@ contract Henriable is HHelper {
         // O(1) lookups and lets 0 mean "not registered"...
         investments[_investmentId] = investmentsList.length;
 
-        // ...and link it to its asset so the asset can enumerate its investments.
-        assetInvestments[_assetId].push(investmentsList.length - 1);
+        // ...and link it to its asset so the asset can enumerate its investments,
+        // storing its position as `index + 1` like the id mappings.
+        assetInvestments[_assetId].push(investmentsList.length);
     }
 
     //</editor-fold desc="Action:Admin:Investment: Add investment">
@@ -524,7 +531,7 @@ contract Henriable is HHelper {
         HInvestment storage investment = getInvestmentStorage(_investmentId);
 
         // Hire times may only be cleared once investing has finished.
-        HInvestmentStatus[] memory allowedStatuses = new HInvestmentStatus[](1);
+        HInvestmentStatus[] memory allowedStatuses = new HInvestmentStatus[](2);
         allowedStatuses[0] = HInvestmentStatus.InvestmentDone;
         allowedStatuses[1] = HInvestmentStatus.Pending;
 
@@ -537,6 +544,129 @@ contract Henriable is HHelper {
     }
 
     //</editor-fold desc="Action:Admin:Investment: Clear next hire time">
+
+    //<editor-fold desc="Action:Rider: Register as a rider">
+
+    /// @notice Registers the caller as a rider for a funded investment's hire round.
+    /// @dev    The rider is {msg.sender}; the initial buy-in is pulled into the contract
+    ///         so it can be refunded if the rider is later rejected. Registration is
+    ///         only allowed while the investment is {HInvestmentStatus.AcceptingRiders}.
+    ///         States updated: {ridersList}, {riders}, {ridersHirePurchasesRequestsList},
+    ///         {ridersHireRequestPurchasesByInvestment}, and the investment's
+    ///         {HInvestment.ridersHirePurchaseRequestsList}/{ridersHirePurchaseRequests}.
+    /// @param _name The rider's name; must be non-zero.
+    /// @param _country The rider's country; must be non-zero.
+    /// @param _age The rider's age; must be at least 18.
+    /// @param _approvedInitialBuyin The USDC the rider approved; must cover the required buy-in.
+    /// @param _investmentId The id of the investment to register for.
+    function actionRiderRegisterAsARider(
+        bytes32 _name,
+        bytes32 _country,
+        uint8 _age,
+        uint256 _approvedInitialBuyin,
+        bytes32 _investmentId
+    ) external {
+        // Let the status helper advance the opportunity if it is due.
+        maybeUpdateInvestmentStatus(_investmentId);
+
+        // Get the investment (reverts if it is not registered).
+        HInvestment storage investment = getInvestmentStorage(_investmentId);
+
+        //<editor-fold desc="Verify Params">
+
+        // Registration must be open for the investment.
+        {
+            HInvestmentStatus[] memory allowedStatuses = new HInvestmentStatus[](1);
+            allowedStatuses[0] = HInvestmentStatus.AcceptingRiders;
+
+            bool registrationNotOpen = !isInvestmentStatus(_investmentId, allowedStatuses);
+            if (registrationNotOpen) revert HInvestmentNotAcceptingRiders(_investmentId);
+        }
+
+        // Validate the rider's profile.
+        {
+            bool riderNameMissing = _name == bytes32(0);
+            if (riderNameMissing) revert HRiderInvalidName();
+        }
+
+        {
+            bool riderCountryMissing = _country == bytes32(0);
+            if (riderCountryMissing) revert HRiderInvalidCountry();
+        }
+
+        {
+            bool riderTooYoung = _age < 18;
+            if (riderTooYoung) revert HRiderInvalidAge(_age);
+        }
+
+        // The approved buy-in must cover the required initial buy-in.
+        uint256 requiredInitialBuyin = investment.riderInitialBuyinUsd;
+        {
+            bool initialBuyinInsufficient = _approvedInitialBuyin < requiredInitialBuyin;
+            if (initialBuyinInsufficient) {
+                revert HRiderInsufficientInitialBuyin(_approvedInitialBuyin, requiredInitialBuyin);
+            }
+        }
+
+        //</editor-fold desc="Verify Params">
+
+        // A rider may register only once per investment round.
+        bytes32 riderId = bytes32(uint256(uint160(msg.sender)));
+        {
+            bool riderAlreadyRegistered = ridersHireRequestPurchasesByInvestment[riderId][_investmentId] != 0;
+            if (riderAlreadyRegistered) revert HRiderAlreadyRegistered(_investmentId, msg.sender);
+        }
+
+        // Create or update the rider's profile.
+        upsertRider(msg.sender, _name, _country, _age);
+
+        // Record the hire request globally and on the investment.
+        HRiderHirePurchaseRequest memory hireRequest = HRiderHirePurchaseRequest({
+            riderId: riderId,
+            investmentId: _investmentId,
+            timeRequested: block.timestamp
+        });
+
+        // Record the hire request globally and on the investment. Every stored position
+        // is `index + 1` (0 = "not registered"); HHelper getters hide the conversion.
+        ridersHirePurchasesRequestsList.push(hireRequest);
+        uint256 globalRequestIndexPlusOne = ridersHirePurchasesRequestsList.length;
+
+        // Update investment's higher purchase list.
+        investment.ridersHirePurchaseRequestsList.push(globalRequestIndexPlusOne);
+        // Get new length of investment's number of hire-purchase sent.
+        uint256 investmentRequestIndexPlusOne = investment.ridersHirePurchaseRequestsList.length;
+        // Update specific rider's by investment investment hire purchase mapping.
+        ridersHireRequestPurchasesByInvestment[riderId][_investmentId] = globalRequestIndexPlusOne;
+
+        // Update investment mapping.
+        investment.ridersHirePurchaseRequests[msg.sender] = investmentRequestIndexPlusOne;
+
+        // Pull the initial buy-in into the contract (reverts on failure).
+        ownerUsdToken.safeTransferFrom(msg.sender, address(this), requiredInitialBuyin);
+    }
+
+    /// @notice Creates a rider profile for an address, or updates it if it exists.
+    /// @param riderAddress The rider's address.
+    /// @param riderName The rider's name.
+    /// @param riderCountry The rider's country.
+    /// @param riderAge The rider's age.
+    function upsertRider(address riderAddress, bytes32 riderName, bytes32 riderCountry, uint8 riderAge) internal {
+        bool riderExists = riders[riderAddress] != 0;
+        if (riderExists) {
+            HRider storage existingRider = getRiderStorage(riderAddress);
+            existingRider.name = riderName;
+            existingRider.country = riderCountry;
+            existingRider.age = riderAge;
+        } else {
+            HRider memory newRider =
+                            HRider({riderAddress: riderAddress, name: riderName, country: riderCountry, age: riderAge});
+            ridersList.push(newRider);
+            riders[riderAddress] = ridersList.length;
+        }
+    }
+
+    //</editor-fold desc="Action:Rider: Register as a rider">
 
     //</editor-fold desc="Actions">
 }

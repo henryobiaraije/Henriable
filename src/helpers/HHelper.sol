@@ -16,6 +16,7 @@ HInvestmentStatus,
 HInvestor,
 HInvestorDoesNotExist,
 HRider,
+HRiderDoesNotExist,
 HRiderHirePurchaseRequest,
 HRiderPayin,
 HPayingHistory,
@@ -110,7 +111,8 @@ contract HHelper is Ownable {
     /// @notice All registered riders.
     HRider[] internal ridersList;
 
-    /// @notice Maps a rider address to its index in {ridersList}.
+    /// @notice Maps a rider address to its index in {ridersList}, stored as
+    ///         `index + 1`, so 0 means "not registered".
     mapping(address => uint256) internal riders;
 
     /// @notice All rider hire-purchase requests ever made.
@@ -191,8 +193,10 @@ contract HHelper is Ownable {
     ///           (`timeNextInvestmentStart <= now <= timeNextInvestmentEnd`).
     ///         - AcceptingInvestments -> InvestmentDone once the asset's senior and
     ///           junior pools are both filled, recording {HInvestment.investmentsDoneAt}.
-    ///         It runs lazily, e.g. when an investor calls actionInvest, so the status
-    ///         catches up on first use. After each status update it returns.
+    ///         - InvestmentDone -> AcceptingRiders once the admin-set hire window opens
+    ///           (`timeNextRiderHireRequestStart <= now <= timeNextRiderHireRequestEnd`).
+    ///         It runs lazily on first use (e.g. when an investor or rider calls in), so
+    ///         the status catches up. After each status update it returns.
     /// @param investmentId The id of the investment to update.
     function maybeUpdateInvestmentStatus(bytes32 investmentId) internal {
         HInvestment storage investment = getInvestmentStorage(investmentId);
@@ -224,6 +228,19 @@ contract HHelper is Ownable {
             if (investmentFullyFunded) {
                 investment.status = HInvestmentStatus.InvestmentDone;
                 investment.investmentsDoneAt = block.timestamp;
+                return;
+            }
+        }
+
+        if (currentStatus == HInvestmentStatus.InvestmentDone) {
+            // The hire round may open once the admin has set a window and now is within it.
+            bool hireTimeSet = investment.timeNextRiderHireRequestStart != 0;
+            bool withinHireWindow = hireTimeSet
+                && block.timestamp >= investment.timeNextRiderHireRequestStart
+                && block.timestamp <= investment.timeNextRiderHireRequestEnd;
+
+            if (withinHireWindow) {
+                investment.status = HInvestmentStatus.AcceptingRiders;
                 return;
             }
         }
@@ -288,11 +305,26 @@ contract HHelper is Ownable {
         return assetsList[indexPlusOne - 1];
     }
 
-    /// @notice Returns the indices of the investments created for an asset.
+    /// @notice Returns the ids of the investments created for an asset.
     /// @param assetId The id of the asset.
-    /// @return An array of indices into {investmentsList}.
-    function getAssetInvestmentIds(bytes32 assetId) external view returns (uint256[] memory) {
-        return assetInvestments[assetId];
+    /// @return An array of investment ids.
+    function getAssetInvestmentIds(bytes32 assetId) external view returns (bytes32[] memory) {
+        uint256 assetInvestmentsCount = assetInvestments[assetId].length;
+        bytes32[] memory investmentIds = new bytes32[](assetInvestmentsCount);
+        for (uint256 i = 0; i < assetInvestmentsCount; i++) {
+            investmentIds[i] = getAssetInvestmentStorage(assetId, i).investmentId;
+        }
+        return investmentIds;
+    }
+
+    /// @notice Returns a storage reference to an investment created for an asset.
+    /// @dev    Hides the `index + 1` bookkeeping used by {assetInvestments}.
+    /// @param assetId The id of the asset.
+    /// @param position The position in the asset's investment list.
+    /// @return A storage reference to the investment.
+    function getAssetInvestmentStorage(bytes32 assetId, uint256 position) internal view returns (HInvestment storage) {
+        uint256 indexPlusOne = assetInvestments[assetId][position];
+        return investmentsList[indexPlusOne - 1];
     }
 
     /// @notice Returns the number of investments created for an asset.
@@ -310,17 +342,13 @@ contract HHelper is Ownable {
         return investmentsList.length;
     }
 
-    /// @notice Returns the index in {investmentsList} for an investment id.
-    /// @dev    Reverts if the investment is not registered.
+    /// @notice Returns the 1-based index in {investmentsList} for an investment id.
+    /// @dev    Positions are 1-based (0 means "not registered"); to index the array
+    ///         directly, callers subtract 1.
     /// @param investmentId The id of the investment.
-    /// @return The index into {investmentsList}.
+    /// @return The 1-based index, or 0 if the investment is not registered.
     function getInvestmentIndex(bytes32 investmentId) external view returns (uint256) {
-        uint256 indexPlusOne = investments[investmentId];
-
-        bool investmentDoesNotExist = indexPlusOne == 0;
-        if (investmentDoesNotExist) revert HInvestmentDoesNotExist(investmentId);
-
-        return indexPlusOne - 1;
+        return investments[investmentId];
     }
 
     /// @notice Returns a storage reference to a registered investment.
@@ -436,10 +464,11 @@ contract HHelper is Ownable {
         return investmentsList[index].juniorInvestorsList;
     }
 
-    /// @notice Returns a senior investor's index within an investment's senior list.
+    /// @notice Returns a senior investor's 1-based index within an investment's senior list.
+    /// @dev    Positions are 1-based; 0 means the investor is not in the list.
     /// @param investmentId The id of the investment.
     /// @param investor The investor address.
-    /// @return The index in the senior investors list.
+    /// @return The 1-based index, or 0 if not present.
     function getSeniorInvestorIndex(bytes32 investmentId, address investor)
     external
     view
@@ -448,10 +477,11 @@ contract HHelper is Ownable {
         return getInvestmentStorage(investmentId).seniorInvestors[investor];
     }
 
-    /// @notice Returns a junior investor's index within an investment's junior list.
+    /// @notice Returns a junior investor's 1-based index within an investment's junior list.
+    /// @dev    Positions are 1-based; 0 means the investor is not in the list.
     /// @param investmentId The id of the investment.
     /// @param investor The investor address.
-    /// @return The index in the junior investors list.
+    /// @return The 1-based index, or 0 if not present.
     function getJuniorInvestorIndex(bytes32 investmentId, address investor)
     external
     view
@@ -460,21 +490,42 @@ contract HHelper is Ownable {
         return getInvestmentStorage(investmentId).juniorInvestors[investor];
     }
 
-    /// @notice Returns the rider hire-purchase request indices for an investment.
+    /// @notice Returns the rider ids of the hire-purchase requests for an investment.
     /// @param index The index into {investmentsList}.
-    /// @return Indices into {ridersHirePurchasesRequestsList}.
+    /// @return An array of rider ids.
     function getRidersHirePurchaseRequestsList(uint256 index)
     external
     view
-    returns (uint256[] memory)
+    returns (bytes32[] memory)
     {
-        return investmentsList[index].ridersHirePurchaseRequestsList;
+        bytes32 investmentId = investmentsList[index].investmentId;
+        uint256 requestsCount = investmentsList[index].ridersHirePurchaseRequestsList.length;
+        bytes32[] memory riderIds = new bytes32[](requestsCount);
+        for (uint256 i = 0; i < requestsCount; i++) {
+            riderIds[i] = getInvestmentHireRequestStorage(investmentId, i).riderId;
+        }
+        return riderIds;
     }
 
-    /// @notice Returns a rider's hire-request index for an investment.
+    /// @notice Returns a storage reference to a hire-purchase request of an investment.
+    /// @dev    Hides the `index + 1` bookkeeping used by the investment's request list.
+    /// @param investmentId The id of the investment.
+    /// @param position The position in the investment's hire-request list.
+    /// @return A storage reference to the hire-purchase request.
+    function getInvestmentHireRequestStorage(bytes32 investmentId, uint256 position)
+    internal
+    view
+    returns (HRiderHirePurchaseRequest storage)
+    {
+        uint256 indexPlusOne = getInvestmentStorage(investmentId).ridersHirePurchaseRequestsList[position];
+        return ridersHirePurchasesRequestsList[indexPlusOne - 1];
+    }
+
+    /// @notice Returns a rider's 1-based position in an investment's hire-request list.
+    /// @dev    Positions are 1-based; 0 means the rider has no request for the investment.
     /// @param investmentId The id of the investment.
     /// @param rider The rider address.
-    /// @return The index into {ridersHirePurchasesRequestsList}.
+    /// @return The 1-based position, or 0 if not present.
     function getRiderHirePurchaseRequestIndex(bytes32 investmentId, address rider)
     external
     view
@@ -547,17 +598,13 @@ contract HHelper is Ownable {
         return investorsList.length;
     }
 
-    /// @notice Returns an investor's index in {investorsList}.
-    /// @dev    Reverts if the investor is not registered.
+    /// @notice Returns an investor's 1-based index in {investorsList}.
+    /// @dev    Positions are 1-based (0 means "not registered"); to index the array
+    ///         directly, callers subtract 1.
     /// @param investor The investor address.
-    /// @return The index in {investorsList}.
+    /// @return The 1-based index, or 0 if the investor is not registered.
     function getInvestorIndex(address investor) external view returns (uint256) {
-        uint256 indexPlusOne = investors[investor];
-
-        bool investorDoesNotExist = indexPlusOne == 0;
-        if (investorDoesNotExist) revert HInvestorDoesNotExist(investor);
-
-        return indexPlusOne - 1;
+        return investors[investor];
     }
 
     /// @notice Returns a storage reference to a registered investor.
@@ -604,11 +651,27 @@ contract HHelper is Ownable {
         return ridersList.length;
     }
 
-    /// @notice Returns a rider's index in {ridersList}.
+    /// @notice Returns a rider's 1-based index in {ridersList}.
+    /// @dev    Positions are 1-based (0 means "not registered"); to index the array
+    ///         directly, callers subtract 1.
     /// @param rider The rider address.
-    /// @return The index in {ridersList}.
+    /// @return The 1-based index, or 0 if the rider is not registered.
     function getRiderIndex(address rider) external view returns (uint256) {
         return riders[rider];
+    }
+
+    /// @notice Returns a storage reference to a registered rider.
+    /// @dev    Hides the `index + 1` bookkeeping so callers can read or write fields
+    ///         directly. Reverts if the rider is not registered.
+    /// @param rider The rider address.
+    /// @return A storage reference to the rider.
+    function getRiderStorage(address rider) internal view returns (HRider storage) {
+        uint256 indexPlusOne = riders[rider];
+
+        bool riderDoesNotExist = indexPlusOne == 0;
+        if (riderDoesNotExist) revert HRiderDoesNotExist(rider);
+
+        return ridersList[indexPlusOne - 1];
     }
 
     /// @notice Returns the rider registered at an index.
@@ -622,7 +685,15 @@ contract HHelper is Ownable {
     /// @param rider The rider address.
     /// @return The {HRider} for the address (zero-filled if not registered).
     function getRider(address rider) external view returns (HRider memory) {
-        return ridersList[riders[rider]];
+        uint256 indexPlusOne = riders[rider];
+
+        bool riderDoesNotExist = indexPlusOne == 0;
+        if (riderDoesNotExist) {
+            HRider memory notFound;
+            return notFound;
+        }
+
+        return ridersList[indexPlusOne - 1];
     }
 
     // --------------------- Hire-request getters ----------------------

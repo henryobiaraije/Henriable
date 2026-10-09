@@ -208,6 +208,10 @@ struct HRider {
 /// @title HRiderHirePurchaseRequest
 /// @notice A rider's request to hire the asset backing a given investment.
 struct HRiderHirePurchaseRequest {
+    /// @notice Identifier of the rider making the request.
+    /// @dev    The rider's address encoded as bytes32.
+    bytes32 riderId;
+
     /// @notice Identifier of the investment the rider is requesting.
     bytes32 investmentId;
 
@@ -496,6 +500,34 @@ error HInvestorAlreadyInvested(bytes32 investmentId, address investor);
 /// @notice Thrown when an investor is younger than the required minimum age.
 /// @param age The supplied age.
 error HInvestorInvalidAge(uint8 age);
+
+/// @notice Thrown when a rider registers for an investment that is not accepting riders.
+/// @param id The investment id.
+error HInvestmentNotAcceptingRiders(bytes32 id);
+
+/// @notice Thrown when a rider is registered without a name.
+error HRiderInvalidName();
+
+/// @notice Thrown when a rider is registered without a country.
+error HRiderInvalidCountry();
+
+/// @notice Thrown when a rider is younger than the required minimum age.
+/// @param age The supplied age.
+error HRiderInvalidAge(uint8 age);
+
+/// @notice Thrown when a rider's approved initial buy-in is below the required amount.
+/// @param provided The approved amount supplied.
+/// @param required The required initial buy-in.
+error HRiderInsufficientInitialBuyin(uint256 provided, uint256 required);
+
+/// @notice Thrown when a rider tries to register twice for the same investment.
+/// @param investmentId The investment id.
+/// @param rider The rider address.
+error HRiderAlreadyRegistered(bytes32 investmentId, address rider);
+
+/// @notice Thrown when an operation references a rider that is not registered.
+/// @param rider The unknown rider address.
+error HRiderDoesNotExist(address rider);
 
 //</editor-fold desc="Errors">
 
