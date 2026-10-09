@@ -140,6 +140,28 @@ contract HHelper is Ownable {
 
     //</editor-fold desc="Constructor">
 
+    //<editor-fold desc="Is...">
+
+    /// @notice Returns whether an investment is currently in any of the given statuses.
+    /// @param investmentId The id of the investment.
+    /// @param statuses The statuses to test for.
+    /// @return True if the investment's current status equals any entry in `statuses`.
+    function isInvestmentStatus(bytes32 investmentId, HInvestmentStatus[] memory statuses)
+        internal
+        view
+        returns (bool)
+    {
+        HInvestmentStatus currentStatus = investmentsList[investments[investmentId]].status;
+        for (uint256 i = 0; i < statuses.length; i++) {
+            if (currentStatus == statuses[i]) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    //</editor-fold desc="Is...">
+
     //<editor-fold desc="Getters">
 
     // ------------------------- Asset getters -------------------------
