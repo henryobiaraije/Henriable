@@ -14,7 +14,16 @@ HAssetInvalidCostPrice,
 HAssetInvalidId,
 HAssetInvalidName,
 HAssetInvalidSellPrice,
+HAssetNotActive,
 HInvestment,
+HInvestmentAlreadyExists,
+HInvestmentInvalidId,
+HInvestmentInvalidJuniorInvestorsNeeded,
+HInvestmentInvalidMinimumRiderPeriodicPayings,
+HInvestmentInvalidPeriodicRiderPayingInMinutes,
+HInvestmentInvalidRiderInitialBuyin,
+HInvestmentInvalidSeniorInvestorsNeeded,
+HInvestmentInvalidSettings,
 HInvestmentStatus
 } from "./types/common.sol";
 import {HHelper} from "./helpers/HHelper.sol";
@@ -139,6 +148,119 @@ contract Henriable is HHelper {
     }
 
     //</editor-fold desc="Action:Admin:Asset: Change asset status">
+
+    //<editor-fold desc="Action:Admin:Investment: Add investment">
+
+    /// @notice Adds a new investment opportunity against an existing active asset.
+    /// @dev    Only the contract owner (admin) may call this.
+    ///         {HInvestment} contains mappings and therefore cannot be passed as a
+    ///         calldata parameter, so the admin-supplied settings are taken as
+    ///         individual arguments. Validates them, checks the level-1 settings
+    ///         against the asset, forces the opportunity active and Pending, appends
+    ///         it to {investmentsList}, records its position in the {investments}
+    ///         index mapping and links it to its asset via {assetInvestments}.
+    ///         States updated: {investmentsList}, {investments}, {assetInvestments}.
+    /// @param _investmentId Unique, non-zero id of the new investment slot.
+    /// @param _assetId Id of the asset to invest in; must exist and be active.
+    /// @param _totalSeniorInvestorsNeeded Senior investor slots required; must be non-zero.
+    /// @param _totalJuniorInvestorsNeeded Junior investor slots required; must be non-zero.
+    /// @param _riderInitialBuyinUsd Initial rider buy-in, in USDC; must be non-zero.
+    /// @param _periodicRiderPayingInMinutes Length of a rider period, in minutes; must be non-zero.
+    /// @param _minimumRiderPeriodicPayingUsd Minimum rider payment per period, in USDC; must be non-zero.
+    function actionAdminAddInvestment(
+        bytes32 _investmentId,
+        bytes32 _assetId,
+        uint256 _totalSeniorInvestorsNeeded,
+        uint256 _totalJuniorInvestorsNeeded,
+        uint256 _riderInitialBuyinUsd,
+        uint256 _periodicRiderPayingInMinutes,
+        uint256 _minimumRiderPeriodicPayingsUsd
+    ) external onlyOwner {
+
+        //<editor-fold desc="Verify Parameters">
+
+        // The id is the registry key, so it must be provided.
+        {
+            bool investmentIdMissing = _investmentId == bytes32(0);
+            if (investmentIdMissing) revert HInvestmentInvalidId();
+        }
+
+        // `investments[_investmentId]` stores `index + 1`, so any non-zero value means
+        // this id is already registered.
+        {
+            bool investmentAlreadyExists = investments[_investmentId] != 0;
+            if (investmentAlreadyExists) revert HInvestmentAlreadyExists(_investmentId);
+        }
+
+        // The asset must be registered (reverts otherwise via the storage getter)
+        // and still active, since a disabled asset cannot raise new investments.
+        {
+            HAsset storage asset = getAssetStorage(_assetId);
+
+            bool assetNotActive = !asset.active;
+            if (assetNotActive) revert HAssetNotActive(_assetId);
+        }
+
+        // Both investor tiers need at least one slot to be fundable.
+        {
+            bool seniorInvestorsNeededMissing = _totalSeniorInvestorsNeeded == 0;
+            if (seniorInvestorsNeededMissing) revert HInvestmentInvalidSeniorInvestorsNeeded();
+        }
+
+        {
+            bool juniorInvestorsNeededMissing = _totalJuniorInvestorsNeeded == 0;
+            if (juniorInvestorsNeededMissing) revert HInvestmentInvalidJuniorInvestorsNeeded();
+        }
+
+        // The rider economics must be non-zero so the hire purchase can start and pay out.
+        {
+            bool riderInitialBuyinMissing = _riderInitialBuyinUsd == 0;
+            if (riderInitialBuyinMissing) revert HInvestmentInvalidRiderInitialBuyin();
+        }
+
+        {
+            bool periodicRiderPayingInMinutesMissing = _periodicRiderPayingInMinutes == 0;
+            if (periodicRiderPayingInMinutesMissing) revert HInvestmentInvalidPeriodicRiderPayingInMinutes();
+        }
+
+        {
+            bool minimumRiderPeriodicPayingsMissing = _minimumRiderPeriodicPayingsUsd == 0;
+            if (minimumRiderPeriodicPayingsMissing) revert HInvestmentInvalidMinimumRiderPeriodicPayings();
+        }
+
+        //</editor-fold desc="Verify Parameters">
+
+        // Append the opportunity to the registry list and stage its admin settings
+        // so the accuracy calculator can inspect them.
+        HInvestment storage newInvestment = investmentsList.push();
+
+        newInvestment.investmentId = _investmentId;
+        newInvestment.assetId = _assetId;
+        newInvestment.totalSeniorInvestorsNeeded = _totalSeniorInvestorsNeeded;
+        newInvestment.totalJuniorInvestorsNeeded = _totalJuniorInvestorsNeeded;
+        newInvestment.riderInitialBuyinUsd = _riderInitialBuyinUsd;
+        newInvestment.periodicRiderPayingInMinutes = _periodicRiderPayingInMinutes;
+        newInvestment.minimumRiderPeriodicPayingsUsd = _minimumRiderPeriodicPayingsUsd;
+
+        // Reject a level-1 configuration that cannot cover the profits promised to
+        // the senior and junior investor pools. Reverting here discards the staged
+        // investment.
+        bool level1SettingsInaccurate = !calcInvestmentOpportunityLevel1SettingsAccuracy(newInvestment);
+        if (level1SettingsInaccurate) revert HInvestmentInvalidSettings();
+
+        // A newly added opportunity always starts active and Pending.
+        newInvestment.active = true;
+        newInvestment.status = HInvestmentStatus.Pending;
+
+        // ...record its position as `index + 1` (length after push), which gives
+        // O(1) lookups and lets 0 mean "not registered"...
+        investments[_investmentId] = investmentsList.length;
+
+        // ...and link it to its asset so the asset can enumerate its investments.
+        assetInvestments[_assetId].push(investmentsList.length - 1);
+    }
+
+    //</editor-fold desc="Action:Admin:Investment: Add investment">
 
     //</editor-fold desc="Actions">
 }
