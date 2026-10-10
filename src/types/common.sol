@@ -272,8 +272,9 @@ struct HRiderPayin {
 }
 
 /// @title HSharingBreakdown
-/// @notice Split of one rider periodic payment across its beneficiaries.
-/// @dev    Returned by the sharing calculator; the caller credits each party.
+/// @notice Split of one rider periodic payment across the owner and the investor pools.
+/// @dev    Returned by the sharing calculator; the caller credits each party. The rider's
+///         refundable savings charge is collected separately and is not part of this split.
 struct HSharingBreakdown {
     /// @notice Amount credited to the contract owner, in USDC.
     uint256 ownerAmount;
@@ -283,9 +284,6 @@ struct HSharingBreakdown {
 
     /// @notice Total amount credited to the junior investor pool, in USDC.
     uint256 juniorInvestorsAmount;
-
-    /// @notice Amount credited to the rider's savings, in USDC.
-    uint256 riderSavingsAmount;
 }
 
 /// @title HPayingHistory
