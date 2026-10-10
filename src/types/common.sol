@@ -64,6 +64,26 @@ struct HAsset {
     /// @notice Profit owner will earn over time.
     uint256 ownerProfit;
 
+    /// @notice Share of each rider payment (in percent) credited equally to the senior
+    ///         investor pool while the senior pool is not yet fully paid.
+    uint256 sharingPercentSeniorInvestor;
+
+    /// @notice Share of each rider payment (in percent) credited equally to the junior
+    ///         investor pool while the senior pool is not yet fully paid.
+    uint256 sharingPercentJuniorInvestor;
+
+    /// @notice Share of each rider payment (in percent) kept by the owner while the senior
+    ///         pool is not yet fully paid. The owner also absorbs rounding and any overflow.
+    uint256 sharingPercentOwner;
+
+    /// @notice Share of each rider payment (in percent) credited equally to the junior
+    ///         investor pool once the senior pool is fully paid.
+    uint256 sharingPercentJuniorInvestorAfterSeniorPaid;
+
+    /// @notice Share of each rider payment (in percent) kept by the owner once the senior
+    ///         pool is fully paid. The owner also absorbs rounding and any overflow.
+    uint256 sharingPercentOwnerAfterSeniorPaid;
+
     /// @notice Number of senior investor slots required to fund one unit of this asset.
     /// @dev    Used to know when the senior pool is fully funded.
     uint256 totalNumberOfSeniorInvestorsNeeded;
