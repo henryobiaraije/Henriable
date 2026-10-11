@@ -8,6 +8,7 @@ pragma solidity ^0.8.13;
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {HMath} from "./HMath.sol";
 import {
 HAsset,
 HAssetDoesNotExist,
@@ -231,6 +232,8 @@ contract HHelper is Ownable {
 
     //<editor-fold desc="Calculators">
 
+    //<editor-fold desc="calcInvestmentOpportunityLevel1SettingsAccuracy">
+
     /// @notice Checks that the level-1 settings of a new investment opportunity are
     ///         consistent with its asset, so the rider's payments can cover the
     ///         profits promised to the senior and junior investor pools.
@@ -240,33 +243,100 @@ contract HHelper is Ownable {
     function calcInvestmentOpportunityLevel1SettingsAccuracy(HInvestment storage) internal pure returns (bool) {
         return true;
     }
+    //</editor-fold desc="calcInvestmentOpportunityLevel1SettingsAccuracy">
 
-    /// @notice Splits one rider periodic payment across the owner, the senior and
-    ///         junior investor pools, and the rider's savings.
-    /// @dev    The rider's slashable savings is the fixed per-period extra charge, which is
-    ///         collected on top of the sell price and refunded on ownership transfer, so it
-    ///         is set aside first. The remainder is shared across the owner and the two
-    ///         investor pools, with the owner absorbing any integer-division remainder.
-    /// @param amount The rider payment to split, in USDC.
-    /// @param riderSavingsAmount The per-period extra charge set aside for the rider, in USDC.
+    //<editor-fold desc="calcSeniorPoolPaidSoFar">
+
+    /// @notice Sums how much the senior investor pool has been paid so far on an investment.
+    /// @param investment The investment (storage reference).
+    /// @return The total amount paid to senior investors, in USDC.
+    function calcSeniorPoolPaidSoFar(HInvestment storage investment) internal view returns (uint256) {
+        uint256 seniorPaidSoFar = 0;
+        address[] storage seniorInvestors = investment.seniorInvestorsList;
+
+        for (uint256 i = 0; i < seniorInvestors.length; i++) {
+            seniorPaidSoFar += investment.investorPayoutHistory[seniorInvestors[i]].totalAmountPaid;
+        }
+
+        return seniorPaidSoFar;
+    }
+    //</editor-fold desc="calcSeniorPoolPaidSoFar">
+
+    //<editor-fold desc="calcSharingFormula">
+
+    /// @notice Splits one rider periodic payment across the owner and the two investor pools.
+    /// @dev    The rider's refundable savings charge is collected on top of the payment and is
+    ///         not part of this split. While the senior pool is not yet fully paid the payment
+    ///         is shared as {HAsset.sharingPercentSeniorInvestor} to the senior pool,
+    ///         {HAsset.sharingPercentJuniorInvestor} to the junior pool and the rest to the
+    ///         owner, with the senior share never exceeding what the senior pool is still owed.
+    ///         Once the senior pool is fully paid the split becomes
+    ///         {HAsset.sharingPercentJuniorInvestorAfterSeniorPaid} to the junior pool and the
+    ///         rest to the owner. The owner absorbs integer-division dust and any senior
+    ///         overflow.
+    /// @param investment The investment being paid (storage reference).
+    /// @param asset The asset backing the investment (storage reference).
+    /// @param amount The rider payment to split, in USDC (excludes the savings charge).
     /// @return The per-bucket breakdown.
-    function calcSharingFormula(uint256 amount, uint256 riderSavingsAmount)
+    function calcSharingFormula(HInvestment storage investment, HAsset storage asset, uint256 amount)
     internal
-    pure
+    view
     returns (HSharingBreakdown memory)
     {
-        uint256 distributable = amount - riderSavingsAmount;
-        uint256 seniorInvestorsAmount = distributable / 3;
-        uint256 juniorInvestorsAmount = distributable / 3;
-        uint256 ownerAmount = distributable - seniorInvestorsAmount - juniorInvestorsAmount;
+        //<editor-fold desc="Check whether the senior pool is still owed money">
+
+        // What the whole senior pool must receive over the term: slots x (buying price + profit).
+        uint256 seniorPoolTotal = asset.totalNumberOfSeniorInvestorsNeeded * (asset.oneSeniorInvestorBuyingPrice + asset.oneSeniorInvestorProfit);
+        // What the senior pool has already received.
+        uint256 seniorPoolPaidSoFar = calcSeniorPoolPaidSoFar(investment);
+        // The senior pool still gets paid until it has received its full target.
+        bool seniorStillOwed = seniorPoolPaidSoFar < seniorPoolTotal;
+        // How much the senior pool is still owed in total.
+        uint256 seniorPoolRemaining = 0;
+        if (seniorStillOwed) {
+            seniorPoolRemaining = seniorPoolTotal - seniorPoolPaidSoFar;
+        }
+
+        //</editor-fold desc="Check whether the senior pool is still owed money">
+
+        //<editor-fold desc="Split the payment">
+
+        uint256 seniorInvestorsAmount = 0;
+        uint256 juniorInvestorsAmount = 0;
+
+        if (seniorStillOwed) {
+            // Normal split: senior and junior take their percentages, owner gets the rest.
+            seniorInvestorsAmount = amount * asset.sharingPercentSeniorInvestor / 100;
+            juniorInvestorsAmount = amount * asset.sharingPercentJuniorInvestor / 100;
+
+            // Never pay the senior pool more than it is still owed; the owner takes the excess.
+            bool seniorShareExceedsRemaining = seniorInvestorsAmount > seniorPoolRemaining;
+            if (seniorShareExceedsRemaining) {
+                seniorInvestorsAmount = seniorPoolRemaining;
+            }
+        } else {
+            // Senior pool is fully paid: junior takes its larger share, owner gets the rest.
+            juniorInvestorsAmount = amount * asset.sharingPercentJuniorInvestorAfterSeniorPaid / 100;
+        }
+
+        // Owner takes the remainder: its own percentage, rounding dust and any senior overflow.
+        uint256 ownerAmount = amount - seniorInvestorsAmount - juniorInvestorsAmount;
+
+        //</editor-fold desc="Split the payment">
+
+        //<editor-fold desc="Return the breakdown">
 
         return HSharingBreakdown({
             ownerAmount: ownerAmount,
             seniorInvestorsAmount: seniorInvestorsAmount,
-            juniorInvestorsAmount: juniorInvestorsAmount,
-            riderSavingsAmount: riderSavingsAmount
+            juniorInvestorsAmount: juniorInvestorsAmount
         });
+
+        //</editor-fold desc="Return the breakdown">
     }
+    //</editor-fold desc="calcSharingFormula">
+
+    //<editor-fold desc="calcRiderAmountToPayNow">
 
     /// @notice Computes the payment a rider owes for the next instalment of an investment.
     /// @dev    The rider owes {HAsset.sellPrice} in total and the outstanding balance is that
@@ -290,14 +360,11 @@ contract HHelper is Ownable {
             remainingToPay = totalAmountToPay - totalAmountPaid;
         }
 
-        uint256 requiredThisPayment = investment.minimumRiderPeriodicPayingsUsd;
-        bool remainingBelowMinimum = remainingToPay < requiredThisPayment;
-        if (remainingBelowMinimum) {
-            requiredThisPayment = remainingToPay;
-        }
+        uint256 requiredThisPayment = HMath.min(remainingToPay, investment.minimumRiderPeriodicPayingsUsd);
 
         return requiredThisPayment + asset.riderSlashableRepayableExtraCharge;
     }
+    //</editor-fold desc="calcRiderAmountToPayNow">
 
     //</editor-fold desc="Calculators">
 
@@ -409,13 +476,14 @@ contract HHelper is Ownable {
     //<editor-fold desc="Distributions">
 
     /// @notice Records the accounting for one rider payment split across its beneficiaries.
-    /// @dev    Writes all payout/savings state and moves no tokens, so the caller can keep
-    ///         the transfer step last (checks-effects-interactions). The owner and each
-    ///         investor in a tier share their pool equally; an empty tier or any division
-    ///         remainder stays in the contract.
+    /// @dev    Writes the payout state and moves no tokens, so the caller can keep the
+    ///         transfer step last (checks-effects-interactions). The owner and each investor in
+    ///         a tier share their pool equally; an empty tier or any division remainder stays
+    ///         in the contract. The rider's savings charge is recorded separately by
+    ///         {recordRiderSavings}.
     /// @param investment The investment the payment belongs to (storage reference).
     /// @param investmentId The id of the investment.
-    /// @param breakdown The owner/investor/savings split of the payment.
+    /// @param breakdown The owner/investor split of the payment.
     function recordDistribution(HInvestment storage investment, bytes32 investmentId, HSharingBreakdown memory breakdown)
     internal
     {
@@ -440,26 +508,35 @@ contract HHelper is Ownable {
         recordTierPayouts(investment, investmentId, investment.seniorInvestorsList, breakdown.seniorInvestorsAmount);
         recordTierPayouts(investment, investmentId, investment.juniorInvestorsList, breakdown.juniorInvestorsAmount);
 
-        // Rider savings (held in the contract, not transferred).
-        if (breakdown.riderSavingsAmount != 0) {
-            HRiderSavingsHistory storage savings = investment.riderSavings;
-            savings.riderAddress = investment.riderWhoHiredIt;
-            savings.totalAmountSaved += breakdown.riderSavingsAmount;
-            savings.savings.push(
-                HRiderSavings({
-                    riderAddress: investment.riderWhoHiredIt,
-                    amountSaved: breakdown.riderSavingsAmount,
-                    timeSaved: block.timestamp
-                })
-            );
-        }
-
-        // Aggregate investment accounting (excludes rider savings).
+        // Aggregate investment accounting.
         HInvestmentPayoutsHistory storage investmentHistory = investment.investmentPayoutHistory;
         investmentHistory.investmentId = investmentId;
         investmentHistory.totalAmountPaid +=
             breakdown.ownerAmount + breakdown.seniorInvestorsAmount + breakdown.juniorInvestorsAmount;
         investmentHistory.totalNumberOfTimesPaid += 1;
+    }
+
+    /// @notice Records the rider's per-period savings charge for an investment.
+    /// @dev    The savings are held in the contract (not transferred): they are refunded when
+    ///         the rider completes and can be slashed if the rider defaults.
+    /// @param investment The investment the payment belongs to (storage reference).
+    /// @param amount The savings charge to add, in USDC.
+    function recordRiderSavings(HInvestment storage investment, uint256 amount) internal {
+        bool noSavings = amount == 0;
+        if (noSavings) {
+            return;
+        }
+
+        HRiderSavingsHistory storage savings = investment.riderSavings;
+        savings.riderAddress = investment.riderWhoHiredIt;
+        savings.totalAmountSaved += amount;
+        savings.savings.push(
+            HRiderSavings({
+                riderAddress: investment.riderWhoHiredIt,
+                amountSaved: amount,
+                timeSaved: block.timestamp
+            })
+        );
     }
 
     /// @notice Records an equal-share payout for every investor in a tier.

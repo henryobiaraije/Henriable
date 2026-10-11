@@ -660,8 +660,12 @@ contract Henriable is HHelper {
     /// @param _investmentId The id of the investment being paid.
     /// @param _approvedUSD The USDC the rider is paying; must be at least the minimum plus the savings charge.
     function actionRiderPayin(bytes32 _investmentId, uint256 _approvedUSD) external {
+        //<editor-fold desc="Get the Investment">
         // Get the investment (reverts if it is not registered).
         HInvestment storage investment = getInvestmentStorage(_investmentId);
+        //</editor-fold desc="Get the Investment">
+
+        //<editor-fold desc="Ensure this status is Hired">
 
         // The hire purchase must be running.
         {
@@ -671,12 +675,18 @@ contract Henriable is HHelper {
             bool investmentNotHired = !isInvestmentStatus(_investmentId, allowedStatuses);
             if (investmentNotHired) revert HInvestmentNotHired(_investmentId);
         }
+        //</editor-fold desc="Ensure this status is Hired">
+
+        //<editor-fold desc="Ensure this rider is hired for this investment">
 
         // Only the hired rider may pay.
         {
             bool notTheHiredRider = investment.riderWhoHiredIt != msg.sender;
             if (notTheHiredRider) revert HRiderNotHired(_investmentId, msg.sender);
         }
+        //</editor-fold desc="Ensure this rider is hired for this investment">
+
+        //<editor-fold desc="Get the asset & Payment History">
 
         // The asset defines the total the rider owes ({HAsset.sellPrice}) and the fixed
         // per-period extra charge, which is saved for them and refunded on ownership transfer.
@@ -684,12 +694,16 @@ contract Henriable is HHelper {
         uint256 riderSavingsAmount = asset.riderSlashableRepayableExtraCharge;
 
         HPayingHistory storage payinsHistory = investment.riderPayinsHistory;
+        //</editor-fold desc="Get the asset & Payment History">
 
+        //<editor-fold desc="Ensure rider is not Done Paying all required">
         // The rider must not have finished paying.
         {
             bool paymentsCompleted = payinsHistory.totalAmountPaid >= asset.sellPrice;
             if (paymentsCompleted) revert HRiderPaymentsCompleted(_investmentId);
         }
+        //</editor-fold desc="Ensure rider is not Done Paying all required">
+
 
         // The payment must meet the amount due for this period (the periodic minimum, capped
         // by the outstanding balance on the final instalment, plus the savings charge).
@@ -719,17 +733,23 @@ contract Henriable is HHelper {
         );
         investment.riderPayinIndexes.push(riderPayinsList.length);
 
+        // The rider's payment is the hire-purchase portion plus the refundable savings charge.
+        uint256 hirePurchaseAmount = _approvedUSD - riderSavingsAmount;
+
         // Update the rider's payment history and push the next due date by one period.
-        // Only the hire-purchase portion counts toward the target: the savings charge is
-        // set aside for the rider and does not reduce what they still owe.
+        // Only the hire-purchase portion counts toward the total: the savings charge is set
+        // aside for the rider and does not reduce what they still owe.
         payinsHistory.riderAddress = msg.sender;
-        payinsHistory.totalAmountPaid += _approvedUSD - riderSavingsAmount;
+        payinsHistory.totalAmountPaid += hirePurchaseAmount;
         payinsHistory.totalNumberOfTimesPaid += 1;
         investment.riderNextPayinDate += investment.periodicRiderPayingInMinutes * 60;
 
-        // Split the payment and record each beneficiary's share.
-        HSharingBreakdown memory breakdown = calcSharingFormula(_approvedUSD, riderSavingsAmount);
+        // Split the hire-purchase portion and record the owner/investor shares.
+        HSharingBreakdown memory breakdown = calcSharingFormula(investment, asset, hirePurchaseAmount);
         recordDistribution(investment, _investmentId, breakdown);
+
+        // Set the rider's per-period savings aside (refunded on completion, slashable on default).
+        recordRiderSavings(investment, riderSavingsAmount);
 
         // Record completion once the rider has paid the asset's total.
         bool riderCompleted = payinsHistory.totalAmountPaid >= asset.sellPrice;
