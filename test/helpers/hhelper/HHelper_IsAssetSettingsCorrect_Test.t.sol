@@ -30,6 +30,11 @@ contract HHelperIsAssetSettingsCorrectTest is Test, HHelper {
             oneJuniorInvestorProfit: 5,
             riderSlashableRepayableExtraCharge: 2,
             ownerProfit: 75,
+            sharingPercentSeniorInvestor: 70,
+            sharingPercentJuniorInvestor: 25,
+            sharingPercentOwner: 5,
+            sharingPercentJuniorInvestorAfterSeniorPaid: 60,
+            sharingPercentOwnerAfterSeniorPaid: 40,
             totalNumberOfSeniorInvestorsNeeded: 5,
             totalNumberOfJuniorInvestorsNeeded: 20
         });
