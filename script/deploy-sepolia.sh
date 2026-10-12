@@ -20,9 +20,10 @@
 #   the transaction is still accepted.
 #   Override the default two ways:
 #     GAS_ESTIMATE_MULTIPLIER=300 ./script/deploy-sepolia.sh   # env var
-#     ./script/deploy-sepolia.sh -g 300                        # extra forge arg
-#   Extra arguments are forwarded to `forge script` and win, because they appear
-#   after the script's own flags.
+#     ./script/deploy-sepolia.sh -g 300                        # your own forge flag
+#   When you pass your own -g / --gas-estimate-multiplier, the script detects it
+#   and omits its own flag, because forge refuses a duplicate
+#   --gas-estimate-multiplier rather than letting the last one win.
 
 # Fail fast on errors, unset variables and failed pipes.
 set -euo pipefail
@@ -54,9 +55,20 @@ export DEPLOYER_PRIVATE_KEY="$SEPOLIA_PRIVATE_KEY"
 export USDC_ADDRESS="${USDC_ADDRESS:-0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238}"
 
 # Gas-limit headroom: default 200% of forge's gas estimate (see the header for
-# why). Override with GAS_ESTIMATE_MULTIPLIER=<n>, or by passing -g <n> as an
-# extra argument (extra args win, as they are appended after this flag).
+# why). Override with GAS_ESTIMATE_MULTIPLIER=<n>, or by passing your own -g <n>.
 GAS_ESTIMATE_MULTIPLIER="${GAS_ESTIMATE_MULTIPLIER:-200}"
+
+# forge rejects a duplicate --gas-estimate-multiplier, so only add our flag when
+# the caller did not already pass -g / --gas-estimate-multiplier themselves.
+gas_args=(--gas-estimate-multiplier "$GAS_ESTIMATE_MULTIPLIER")
+for arg in "$@"; do
+    case "$arg" in
+        -g | --gas-estimate-multiplier | -g=* | --gas-estimate-multiplier=* | -g[0-9]*)
+            gas_args=()
+            break
+            ;;
+    esac
+done
 
 # Verify on Etherscan when an API key is available.
 verify_args=()
@@ -68,6 +80,6 @@ fi
 forge script script/Deploy.s.sol \
     --rpc-url "$SEPOLIA_RPC_URL" \
     --broadcast \
-    --gas-estimate-multiplier "$GAS_ESTIMATE_MULTIPLIER" \
+    "${gas_args[@]}" \
     "${verify_args[@]}" \
     "$@"

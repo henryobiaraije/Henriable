@@ -7,6 +7,8 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 /// @author Obiaraije Henry
 /// @notice Minimal 6-decimal ERC20 token standing in for USDC on a local network.
 /// @dev    Used by the deploy script; the platform only touches it through {IERC20}.
+///         It exposes an unrestricted {mint} faucet so local balances can be funded;
+///         never use it outside a test network.
 contract MockUSDC is ERC20 {
     //<editor-fold desc="Constructor">
 
@@ -14,6 +16,19 @@ contract MockUSDC is ERC20 {
     constructor() ERC20("USD Coin", "USDC") {}
 
     //</editor-fold desc="Constructor">
+
+    //<editor-fold desc="Actions">
+
+    /// @notice Mints `amount` tokens to `to`.
+    /// @dev    Deliberately unrestricted: this is a local test faucet with no access
+    ///         control, so any address can be funded. Do not deploy on a real network.
+    /// @param to The address receiving the newly minted tokens.
+    /// @param amount The amount to mint, in token units (6 decimals).
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
+
+    //</editor-fold desc="Actions">
 
     //<editor-fold desc="Overrides">
 

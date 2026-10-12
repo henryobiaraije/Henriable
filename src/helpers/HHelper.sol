@@ -50,11 +50,15 @@ contract HHelper is Ownable {
     /// @notice All owner/contract payouts ever made.
     HOwnerPayout[] internal ownerPayoutsList;
 
-    /// @notice Maps an investment id to the index (in {ownerPayoutsList}) of the
+    /// @notice Maps an investment id => 1-based position in {ownerPayoutsList} of the
     ///         most recent owner payout for that investment.
+    /// @dev    Key: investment id (bytes32). Value: `index + 1` into {ownerPayoutsList},
+    ///         so 0 means no owner payout has been recorded for the investment yet.
     mapping(bytes32 => uint256) internal ownerPayouts;
 
-    /// @notice Maps an investment id to the aggregate owner payout history for it.
+    /// @notice Maps an investment id => the aggregate owner payout history for it.
+    /// @dev    Key: investment id (bytes32). Value: {HOwnerPayoutsHistory} holding the
+    ///         running totals of every owner payout recorded on that investment.
     mapping(bytes32 => HOwnerPayoutsHistory) internal ownerPayoutHistory;
 
     //</editor-fold desc="State: Owner">
@@ -64,25 +68,27 @@ contract HHelper is Ownable {
     /// @notice All registered assets, in insertion order.
     HAsset[] internal assetsList;
 
-    /// @notice Maps an asset id to its index in {assetsList}, stored as `index + 1`.
-    /// @dev    Encoding the position as `index + 1` makes 0 mean "not registered", so
-    ///         this single mapping provides an O(1) existence check and lookup.
+    /// @notice Maps an asset id => 1-based position in {assetsList}.
+    /// @dev    Key: asset id (bytes32). Value: `index + 1` into {assetsList}, so 0 means
+    ///         "not registered"; this single mapping provides an O(1) existence check
+    ///         and lookup.
     mapping(bytes32 => uint256) internal assets;
 
     //</editor-fold desc="State: Assets">
 
     //<editor-fold desc="State: Investments">
 
-    /// @notice Maps an asset id to the indices (into {investmentsList}) of the
-    ///         investments created for that asset.
+    /// @notice Maps an asset id => the investments created for that asset.
+    /// @dev    Key: asset id (bytes32). Value: array of 1-based positions into
+    ///         {investmentsList} (subtract 1 to index the array).
     mapping(bytes32 => uint256[]) internal assetInvestments;
 
     /// @notice All investment opportunities ever created.
     HInvestment[] internal investmentsList;
 
-    /// @notice Maps an investment id to its index in {investmentsList}, stored as
-    ///         `index + 1`. Encoding the position as `index + 1` makes 0 mean
-    ///         "not registered" for an O(1) existence check and lookup.
+    /// @notice Maps an investment id => 1-based position in {investmentsList}.
+    /// @dev    Key: investment id (bytes32). Value: `index + 1` into {investmentsList},
+    ///         so 0 means "not registered" for an O(1) existence check and lookup.
     mapping(bytes32 => uint256) internal investments;
 
     /// @notice All registered investors.
@@ -100,15 +106,19 @@ contract HHelper is Ownable {
 
     //<editor-fold desc="State: Investors">
 
-    /// @notice Maps an investor address to its index in {investorsList}, stored as
-    ///         `index + 1`, so 0 means "not registered".
+    /// @notice Maps an investor address => 1-based position in {investorsList}.
+    /// @dev    Key: investor address. Value: `index + 1` into {investorsList}, so 0
+    ///         means "not registered".
     mapping(address => uint256) internal investors;
 
     /// @notice All investor payouts ever made.
     HInvestorPayout[] internal investorPayoutList;
 
-    /// @notice Maps an investor address and investment id to the index (in
-    ///         {investorPayoutList}) of the investor's payout.
+    /// @notice Maps an investor and investment id => the investor's payout in
+    ///         {investorPayoutList}.
+    /// @dev    Key: investor address, then investment id (bytes32). Value: 1-based
+    ///         position in {investorPayoutList} of that investor's most recent payout
+    ///         for the investment, or 0 if none has been recorded.
     mapping(address => mapping(bytes32 => uint256)) internal investorPayouts;
 
     //</editor-fold desc="State: Investors">
@@ -118,19 +128,24 @@ contract HHelper is Ownable {
     /// @notice All registered riders.
     HRider[] internal ridersList;
 
-    /// @notice Maps a rider address to its index in {ridersList}, stored as
-    ///         `index + 1`, so 0 means "not registered".
+    /// @notice Maps a rider address => 1-based position in {ridersList}.
+    /// @dev    Key: rider address. Value: `index + 1` into {ridersList}, so 0 means
+    ///         "not registered".
     mapping(address => uint256) internal riders;
 
     /// @notice All rider hire-purchase requests ever made.
     HRiderHirePurchaseRequest[] internal ridersHirePurchasesRequestsList;
 
-    /// @notice Maps a rider id and investment id to the index (in
-    ///         {ridersHirePurchasesRequestsList}) of the rider's hire request.
+    /// @notice Maps a rider id and investment id => the rider's hire request in
+    ///         {ridersHirePurchasesRequestsList}.
+    /// @dev    Key: rider id (bytes32), then investment id (bytes32). Value: 1-based
+    ///         position in {ridersHirePurchasesRequestsList}, or 0 if the rider has not
+    ///         requested that investment.
     mapping(bytes32 => mapping(bytes32 => uint256)) internal ridersHireRequestPurchasesByInvestment;
 
-    /// @notice Maps a rider id and investment id to a non-zero marker when the rider
-    ///         was rejected for that investment.
+    /// @notice Maps a rider id and investment id => a rejection marker.
+    /// @dev    Key: rider id (bytes32), then investment id (bytes32). Value: non-zero
+    ///         once the rider has been rejected for that investment, 0 otherwise.
     mapping(bytes32 => mapping(bytes32 => uint256)) internal rejectedRiders;
 
     /// @notice All rider periodic payments ever made.

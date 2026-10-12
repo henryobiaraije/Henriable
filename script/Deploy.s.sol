@@ -15,6 +15,15 @@ import {MockUSDC} from "../src/mocks/MockUSDC.sol";
 ///         scripts (script/deploy.sh for Anvil, script/deploy-sepolia.sh for Sepolia)
 ///         set the environment variables and the RPC/verify flags.
 contract DeployScript is Script {
+
+    //<editor-fold desc="Constants">
+
+    /// @notice Mock USDC minted to the deployer on local deployments (1 billion USDC).
+    /// @dev    6-decimal token, so the base amount is multiplied by 10 ** 6.
+    uint256 private constant HMOCK_USDC_INITIAL_SUPPLY = 1_000_000_000 * 10 ** 6;
+
+    //</editor-fold desc="Constants">
+
     /// @notice Deploys Henriable, and a mock USDC when no token is configured.
     /// @return usdc The USDC token Henriable points at.
     /// @return henriable The deployed {Henriable} contract.
@@ -36,6 +45,10 @@ contract DeployScript is Script {
         if (usdcNotConfigured) {
             usdcAddress = address(new MockUSDC());
             console.log("MockUSDC deployed at:", usdcAddress);
+
+            // Fund the deployer so local runs have plenty of USDC to test with.
+            MockUSDC(usdcAddress).mint(initialOwner, HMOCK_USDC_INITIAL_SUPPLY);
+            console.log("MockUSDC minted to owner:", HMOCK_USDC_INITIAL_SUPPLY);
         } else {
             console.log("Using existing USDC at:", usdcAddress);
         }

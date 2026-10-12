@@ -704,7 +704,6 @@ contract Henriable is HHelper {
         }
         //</editor-fold desc="Ensure rider is not Done Paying all required">
 
-
         // The payment must meet the amount due for this period (the periodic minimum, capped
         // by the outstanding balance on the final instalment, plus the savings charge).
         {
@@ -836,4 +835,32 @@ contract Henriable is HHelper {
     //</editor-fold desc="Action:Rider: Complete payment">
 
     //</editor-fold desc="Actions">
+
+    /// @notice Maps an investment id => 1-based position in {ownerPayoutsList} of the
+    ///         most recent owner payout for that investment.
+    /// @dev    Key: investment id (bytes32). Value: `index + 1` into {ownerPayoutsList},
+    ///         so 0 means no owner payout has been recorded for the investment yet.
+    mapping(uint256 => uint256) public testState;
+    uint256[] public testStateList;
+
+    /// @notice Just a test function to test web2.
+    /// @param anyAmount Can be any amount.
+    /// @dev Throws when num is < 5.
+    /// @return Returns just another number.
+    function testSet(uint256 anyAmount) public returns (uint256){
+
+        if (anyAmount < 5) {
+            revert HAssetInvalidId();
+        }
+
+        uint256 time = block.timestamp;
+        testState[time] = anyAmount;
+        testStateList.push(time);
+
+        return 34;
+    }
+
+    function getSet() external view returns (uint256[] memory){
+        return testStateList;
+    }
 }
