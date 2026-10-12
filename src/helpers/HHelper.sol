@@ -45,6 +45,11 @@ contract HHelper is Ownable {
     //<editor-fold desc="States">
 
     //<editor-fold desc="State: Owner">
+
+    /// @notice Secondary owner who may run every admin action but cannot manage owners.
+    /// @dev    Set by owner1 via {Henriable.actionAdminSetOwner2}; address(0) means unset.
+    address internal owner2;
+
     /// @notice USDC token used for all investments, payouts and payments.
     IERC20 internal ownerUsdToken;
 
@@ -185,6 +190,22 @@ contract HHelper is Ownable {
     }
 
     //</editor-fold desc="Constructor">
+
+    //<editor-fold desc="Modifiers">
+
+    /// @notice Restricts a function to owner1 or owner2.
+    /// @dev    Owner-managing functions keep OpenZeppelin's {onlyOwner} (owner1 only), so
+    ///         owner2 can run admin actions but cannot set or clear owners. Reverts with
+    ///         OpenZeppelin's {OwnableUnauthorizedAccount} when the caller is neither.
+    modifier onlyOwners() {
+        bool isOwner1 = msg.sender == owner();
+        bool isOwner2 = owner2 != address(0) && msg.sender == owner2;
+        bool isAnOwner = isOwner1 || isOwner2;
+        if (!isAnOwner) revert OwnableUnauthorizedAccount(msg.sender);
+        _;
+    }
+
+    //</editor-fold desc="Modifiers">
 
     //<editor-fold desc="Is...">
 
@@ -764,6 +785,12 @@ contract HHelper is Ownable {
     /// @return The {IERC20} owner USDC token.
     function getOwnerUsdToken() external view returns (IERC20) {
         return ownerUsdToken;
+    }
+
+    /// @notice Returns the secondary owner, who may run admin actions but not manage owners.
+    /// @return The owner2 address, or address(0) when unset.
+    function getOwner2() external view returns (address) {
+        return owner2;
     }
 
     /// @notice Returns the total number of registered assets.

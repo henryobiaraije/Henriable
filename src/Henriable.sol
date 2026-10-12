@@ -41,6 +41,7 @@ HInvestmentType,
 HInvestor,
 HInvestorAlreadyInvested,
 HInvestorInvalidAge,
+HOwner2IsOwner1,
 HPayingHistory,
 HRiderAlreadyRegistered,
 HRiderHirePurchaseRequest,
@@ -79,17 +80,33 @@ contract Henriable is HHelper {
 
     //<editor-fold desc="Actions">
 
+    //<editor-fold desc="Action:Admin:Owner: Set owner 2">
+
+    /// @notice Sets the secondary owner, who may run every admin action but not manage owners.
+    /// @dev    Only owner1 ({onlyOwner}) may call this, so owner2 cannot set or clear owners.
+    ///         Pass address(0) to clear owner2; rejected when `_owner2` is owner1 itself.
+    ///         States updated: {owner2}.
+    /// @param _owner2 The new secondary owner address, or address(0) to clear it.
+    function actionAdminSetOwner2(address _owner2) external onlyOwner {
+        bool owner2IsOwner1 = _owner2 == owner();
+        if (owner2IsOwner1) revert HOwner2IsOwner1(owner());
+
+        owner2 = _owner2;
+    }
+
+    //</editor-fold desc="Action:Admin:Owner: Set owner 2">
+
     //<editor-fold desc="Action:Admin:Asset Add Assets ">
 
     /// @notice Adds a new asset that can be invested in.
-    /// @dev    Only the contract owner (admin) may call this.
+    /// @dev    Only an owner (admin: owner1 or owner2) may call this.
     ///         Validates the asset, forces it active, appends it to {assetsList} and
     ///         records its position in the {assets} index mapping.
     ///         States updated: {assetsList}, {assets}.
     /// @param _asset The asset configuration to register. Its `id` must be unique and
     ///        non-zero, `name` non-empty, and `costPrice`/`sellPrice` non-zero. The
     ///        `active` field is ignored and set to true.
-    function actionAdminAddAsset(HAsset calldata _asset) external onlyOwner {
+    function actionAdminAddAsset(HAsset calldata _asset) external onlyOwners {
 
         //<editor-fold desc="Verify Parameters">
 
@@ -141,7 +158,7 @@ contract Henriable is HHelper {
     //<editor-fold desc="Action:Admin:Asset: Change asset status">
 
     /// @notice Enables or disables an asset.
-    /// @dev    Only the contract owner (admin) may call this.
+    /// @dev    Only an owner (admin: owner1 or owner2) may call this.
     ///         The asset status may only change while every investment that depends
     ///         on the asset is still {HInvestmentStatus.Pending}; once any such
     ///         investment has moved past Pending, the asset is locked.
@@ -150,7 +167,7 @@ contract Henriable is HHelper {
     ///         States updated: {assetsList}, and {investmentsList} when disabling.
     /// @param _assetId The id of the asset to update.
     /// @param _status The new active status.
-    function actionAdminChangeAssetStatus(bytes32 _assetId, bool _status) external onlyOwner {
+    function actionAdminChangeAssetStatus(bytes32 _assetId, bool _status) external onlyOwners {
         // Get the modifiable asset.
         HAsset storage asset = getAssetStorage(_assetId);
 
@@ -189,7 +206,7 @@ contract Henriable is HHelper {
     //<editor-fold desc="Action:Admin:Investment: Add investment">
 
     /// @notice Adds a new investment opportunity against an existing active asset.
-    /// @dev    Only the contract owner (admin) may call this.
+    /// @dev    Only an owner (admin: owner1 or owner2) may call this.
     ///         {HInvestment} contains mappings and therefore cannot be passed as a
     ///         calldata parameter, so the admin-supplied settings are taken as
     ///         individual arguments. Validates them, checks the level-1 settings
@@ -208,7 +225,7 @@ contract Henriable is HHelper {
         uint256 _riderInitialBuyinUsd,
         uint256 _periodicRiderPayingInMinutes,
         uint256 _minimumRiderPeriodicPayingsUsd
-    ) external onlyOwner {
+    ) external onlyOwners {
 
         //<editor-fold desc="Verify Parameters">
 
@@ -287,14 +304,14 @@ contract Henriable is HHelper {
     //<editor-fold desc="Action:Admin:Investment: Change investment status">
 
     /// @notice Enables or disables an investment opportunity.
-    /// @dev    Only the contract owner (admin) may call this.
+    /// @dev    Only an owner (admin: owner1 or owner2) may call this.
     ///         The investment's active flag may only change while no investor has
     ///         joined it; once the senior or junior pool has any investor, the
     ///         opportunity is locked.
     ///         States updated: {investmentsList}.
     /// @param _investmentId The id of the investment to update.
     /// @param _status The new active status.
-    function actionAdminChangeInvestmentStatus(bytes32 _investmentId, bool _status) external onlyOwner {
+    function actionAdminChangeInvestmentStatus(bytes32 _investmentId, bool _status) external onlyOwners {
         // Get the modifiable investment (reverts if it is not registered).
         HInvestment storage investment = getInvestmentStorage(_investmentId);
 
@@ -312,7 +329,7 @@ contract Henriable is HHelper {
     //<editor-fold desc="Action:Admin:Investment: Set next investment times">
 
     /// @notice Sets the start and end of the next investment round for an investment.
-    /// @dev    Only the contract owner (admin) may call this.
+    /// @dev    Only an owner (admin: owner1 or owner2) may call this.
     ///         The opportunity must still be Pending and its asset active, and the
     ///         round must be in the future with `_endTime` after `_startTime`.
     ///         States updated: {investmentsList}.
@@ -321,7 +338,7 @@ contract Henriable is HHelper {
     /// @param _endTime Timestamp at which the next investment round ends; must be after _startTime.
     function actionAdminSetNextInvestmentTimes(bytes32 _investmentId, uint256 _startTime, uint256 _endTime)
     external
-    onlyOwner
+    onlyOwners
     {
         // Get the modifiable investment (reverts if it is not registered).
         HInvestment storage investment = getInvestmentStorage(_investmentId);
@@ -357,11 +374,11 @@ contract Henriable is HHelper {
     //<editor-fold desc="Action:Admin:Investment: Clear next investment times">
 
     /// @notice Clears the start and end of the next investment round for an investment.
-    /// @dev    Only the contract owner (admin) may call this.
+    /// @dev    Only an owner (admin: owner1 or owner2) may call this.
     ///         The opportunity must still be Pending; both times are reset to 0.
     ///         States updated: {investmentsList}.
     /// @param _investmentId The id of the investment whose round is cleared.
-    function actionAdminClearNextInvestmentsTimes(bytes32 _investmentId) external onlyOwner {
+    function actionAdminClearNextInvestmentsTimes(bytes32 _investmentId) external onlyOwners {
         // Get the modifiable investment (reverts if it is not registered).
         HInvestment storage investment = getInvestmentStorage(_investmentId);
 
@@ -492,7 +509,7 @@ contract Henriable is HHelper {
     //<editor-fold desc="Action:Admin:Investment: Set next hire round time">
 
     /// @notice Sets the window during which riders may request to hire an investment's asset.
-    /// @dev    Only the contract owner (admin) may call this.
+    /// @dev    Only an owner (admin: owner1 or owner2) may call this.
     ///         The opportunity must be funded ({HInvestmentStatus.InvestmentDone}), and the
     ///         window must be in the future with `_endTime` after `_startTime`.
     ///         States updated: {investmentsList}.
@@ -501,7 +518,7 @@ contract Henriable is HHelper {
     /// @param _endTime Timestamp at which the next hire-request round ends; must be after _startTime.
     function actionSetNextHireRoundTime(bytes32 _investmentId, uint256 _startTime, uint256 _endTime)
     external
-    onlyOwner
+    onlyOwners
     {
         // Get the modifiable investment (reverts if it is not registered).
         HInvestment storage investment = getInvestmentStorage(_investmentId);
@@ -531,12 +548,12 @@ contract Henriable is HHelper {
     //<editor-fold desc="Action:Admin:Investment: Clear next hire time">
 
     /// @notice Clears the rider hire-request window for a funded investment.
-    /// @dev    Only the contract owner (admin) may call this.
+    /// @dev    Only an owner (admin: owner1 or owner2) may call this.
     ///         The opportunity must be funded ({HInvestmentStatus.InvestmentDone}); both
     ///         hire-request times are reset to 0.
     ///         States updated: {investmentsList}.
     /// @param _investmentId The id of the investment whose hire window is cleared.
-    function actionClearNextHireTime(bytes32 _investmentId) external onlyOwner {
+    function actionClearNextHireTime(bytes32 _investmentId) external onlyOwners {
         // Get the modifiable investment (reverts if it is not registered).
         HInvestment storage investment = getInvestmentStorage(_investmentId);
 

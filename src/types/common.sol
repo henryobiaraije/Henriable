@@ -528,6 +528,10 @@ enum HInvestmentStatus {
 
 //<editor-fold desc="Errors">
 
+/// @notice Thrown when owner2 is set to the same address as owner1.
+/// @param owner1 The current owner1 address.
+error HOwner2IsOwner1(address owner1);
+
 /// @notice Thrown when an asset is registered without a non-zero id.
 error HAssetInvalidId();
 
