@@ -29,7 +29,8 @@ HInvestorPayout,
 HInvestorPayoutsHistory,
 HInvestmentPayoutsHistory,
 HRiderSavingsHistory,
-HSharingBreakdown
+HSharingBreakdown,
+HStats
 } from "../types/common.sol";
 //</editor-fold desc="Imports">
 
@@ -152,6 +153,25 @@ contract HHelper is Ownable {
     HRiderPayin[] internal riderPayinsList;
 
     //</editor-fold desc="State: Riders">
+
+    //<editor-fold desc="State: Stats">
+
+    /// @notice Running platform totals exposed by {Henriable.getStats}.
+    /// @dev    Counters are maintained in O(1) at each write site; the totals that mirror
+    ///         list lengths are filled in by the getter at read time.
+    HStats internal stats;
+
+    /// @notice Maps an asset id => the number of its currently active investments.
+    /// @dev    Used to keep {HStats.assetsWithRunningInvestments} exact without looping:
+    ///         the global counter only moves when this per-asset count crosses 0.
+    mapping(bytes32 => uint256) internal assetActiveInvestmentsCount;
+
+    /// @notice Maps an asset id => whether one of its investments has completed.
+    /// @dev    Completion is monotonic, so a boolean is enough to count
+    ///         {HStats.assetsWithCompletedInvestments} exactly once per asset.
+    mapping(bytes32 => bool) internal assetHasCompletedInvestment;
+
+    //</editor-fold desc="State: Stats">
 
     //</editor-fold desc="States">
 
@@ -387,7 +407,8 @@ contract HHelper is Ownable {
 
     /// @notice Advances an investment's lifecycle status when its current state and
     ///         timing allow it.
-    /// @dev    State machine: this is the sole place that mutates {HInvestment}.status.
+    /// @dev    State machine: every transition goes through {setInvestmentStatus}, which
+    ///         also keeps the stats counters in step.
     ///         - Pending -> AcceptingInvestments once the admin-set window opens
     ///           (`timeNextInvestmentStart <= now <= timeNextInvestmentEnd`).
     ///         - AcceptingInvestments -> InvestmentDone once the asset's senior and
@@ -411,7 +432,7 @@ contract HHelper is Ownable {
                 && block.timestamp <= investment.timeNextInvestmentEnd;
 
             if (withinInvestmentWindow) {
-                investment.status = HInvestmentStatus.AcceptingInvestments;
+                setInvestmentStatus(investment, HInvestmentStatus.AcceptingInvestments);
                 return;
             }
         }
@@ -425,7 +446,7 @@ contract HHelper is Ownable {
             bool investmentFullyFunded = seniorPoolFilled && juniorPoolFilled;
 
             if (investmentFullyFunded) {
-                investment.status = HInvestmentStatus.InvestmentDone;
+                setInvestmentStatus(investment, HInvestmentStatus.InvestmentDone);
                 investment.investmentsDoneAt = block.timestamp;
                 return;
             }
@@ -439,7 +460,7 @@ contract HHelper is Ownable {
                 && block.timestamp <= investment.timeNextRiderHireRequestEnd;
 
             if (withinHireWindow) {
-                investment.status = HInvestmentStatus.AcceptingRiders;
+                setInvestmentStatus(investment, HInvestmentStatus.AcceptingRiders);
                 return;
             }
         }
@@ -529,6 +550,11 @@ contract HHelper is Ownable {
         investmentHistory.totalAmountPaid +=
             breakdown.ownerAmount + breakdown.seniorInvestorsAmount + breakdown.juniorInvestorsAmount;
         investmentHistory.totalNumberOfTimesPaid += 1;
+
+        // Running platform payout totals.
+        stats.totalOwnerPayoutsUsd += breakdown.ownerAmount;
+        stats.totalSeniorPayoutsUsd += breakdown.seniorInvestorsAmount;
+        stats.totalJuniorPayoutsUsd += breakdown.juniorInvestorsAmount;
     }
 
     /// @notice Records the rider's per-period savings charge for an investment.
@@ -545,6 +571,10 @@ contract HHelper is Ownable {
         HRiderSavingsHistory storage savings = investment.riderSavings;
         savings.riderAddress = investment.riderWhoHiredIt;
         savings.totalAmountSaved += amount;
+
+        // Rider savings are held in the contract, so they count toward the held total.
+        stats.riderSavingsHeldUsd += amount;
+
         savings.savings.push(
             HRiderSavings({
                 riderAddress: investment.riderWhoHiredIt,
@@ -623,6 +653,108 @@ contract HHelper is Ownable {
     }
 
     //</editor-fold desc="Distributions">
+
+    //<editor-fold desc="Stats">
+
+    /// @notice Applies an asset's active flag and keeps {HStats.activeAssets} in step.
+    /// @dev    The single write point for {HAsset.active} after creation, so the counter
+    ///         cannot drift.
+    /// @param asset The asset to update (storage reference).
+    /// @param newActive The requested active status.
+    function setAssetActive(HAsset storage asset, bool newActive) internal {
+        bool unchanged = asset.active == newActive;
+        if (unchanged) {
+            return;
+        }
+
+        asset.active = newActive;
+
+        if (newActive) {
+            stats.activeAssets += 1;
+        } else {
+            stats.activeAssets -= 1;
+        }
+    }
+
+    /// @notice Applies an investment's active flag and keeps the running totals in step.
+    /// @dev    The single write point for {HInvestment.active} after creation. Updates
+    ///         {HStats.activeInvestments} and, via the asset's active-investment count,
+    ///         {HStats.assetsWithRunningInvestments}.
+    /// @param investment The investment to update (storage reference).
+    /// @param newActive The requested active status.
+    function setInvestmentActive(HInvestment storage investment, bool newActive) internal {
+        bool unchanged = investment.active == newActive;
+        if (unchanged) {
+            return;
+        }
+
+        investment.active = newActive;
+
+        if (newActive) {
+            stats.activeInvestments += 1;
+        } else {
+            stats.activeInvestments -= 1;
+        }
+
+        // Track how many of the asset's investments are active so the global
+        // "assets with running investments" count only moves when it crosses 0.
+        bytes32 assetId = investment.assetId;
+        uint256 activeCountBefore = assetActiveInvestmentsCount[assetId];
+        uint256 activeCountAfter = newActive ? activeCountBefore + 1 : activeCountBefore - 1;
+        assetActiveInvestmentsCount[assetId] = activeCountAfter;
+
+        bool assetStartedRunning = activeCountBefore == 0 && activeCountAfter != 0;
+        if (assetStartedRunning) {
+            stats.assetsWithRunningInvestments += 1;
+        }
+
+        bool assetStoppedRunning = activeCountBefore != 0 && activeCountAfter == 0;
+        if (assetStoppedRunning) {
+            stats.assetsWithRunningInvestments -= 1;
+        }
+    }
+
+    /// @notice Applies an investment's lifecycle status and keeps the running totals in step.
+    /// @dev    The single write point for {HInvestment.status} after creation, so the
+    ///         {HStats.investmentsInHire} and {HStats.investmentsPaidInFull} counters and the
+    ///         per-asset completion count cannot drift.
+    /// @param investment The investment to update (storage reference).
+    /// @param newStatus The requested lifecycle status.
+    function setInvestmentStatus(HInvestment storage investment, HInvestmentStatus newStatus) internal {
+        HInvestmentStatus oldStatus = investment.status;
+
+        bool unchanged = oldStatus == newStatus;
+        if (unchanged) {
+            return;
+        }
+
+        bool wasHired = oldStatus == HInvestmentStatus.Hired;
+        if (wasHired) {
+            stats.investmentsInHire -= 1;
+        }
+
+        bool isHired = newStatus == HInvestmentStatus.Hired;
+        if (isHired) {
+            stats.investmentsInHire += 1;
+        }
+
+        bool isComplete = newStatus == HInvestmentStatus.Complete;
+        if (isComplete) {
+            stats.investmentsPaidInFull += 1;
+
+            // Count the asset once, on its first completed investment.
+            bytes32 assetId = investment.assetId;
+            bool assetAlreadyCounted = assetHasCompletedInvestment[assetId];
+            if (!assetAlreadyCounted) {
+                assetHasCompletedInvestment[assetId] = true;
+                stats.assetsWithCompletedInvestments += 1;
+            }
+        }
+
+        investment.status = newStatus;
+    }
+
+    //</editor-fold desc="Stats">
 
     //<editor-fold desc="Getters">
 

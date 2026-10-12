@@ -408,6 +408,91 @@ struct HRiderSavings {
     uint256 timeSaved;
 }
 
+/// @title HStats
+/// @notice Aggregate platform statistics for the frontend, returned by
+///         {Henriable.getStats}.
+/// @dev    Every field is maintained in O(1) as the contract is used, so the getter never
+///         loops. Investor figures count filled slots, not distinct addresses (an address
+///         may hold a senior and a junior slot, and slots in several investments). The
+///         totals derived from list lengths are filled in by the getter at read time.
+struct HStats {
+    //<editor-fold desc="Fields: Assets">
+
+    /// @notice Total number of registered assets.
+    uint256 totalAssets;
+
+    /// @notice Number of assets currently active.
+    uint256 activeAssets;
+
+    /// @notice Number of assets with at least one active investment.
+    uint256 assetsWithRunningInvestments;
+
+    /// @notice Number of assets with at least one completed investment.
+    uint256 assetsWithCompletedInvestments;
+
+    //</editor-fold desc="Fields: Assets">
+
+    //<editor-fold desc="Fields: Investments">
+
+    /// @notice Total number of investment opportunities ever created.
+    uint256 totalInvestments;
+
+    /// @notice Number of investment opportunities currently active.
+    uint256 activeInvestments;
+
+    /// @notice Number of investments currently in {HInvestmentStatus.Hired}.
+    uint256 investmentsInHire;
+
+    /// @notice Number of investments in {HInvestmentStatus.Complete}.
+    uint256 investmentsPaidInFull;
+
+    //</editor-fold desc="Fields: Investments">
+
+    //<editor-fold desc="Fields: People">
+
+    /// @notice Total number of registered investors.
+    uint256 totalInvestors;
+
+    /// @notice Total senior investor slots filled across all investments.
+    uint256 totalSeniorPositions;
+
+    /// @notice Total junior investor slots filled across all investments.
+    uint256 totalJuniorPositions;
+
+    /// @notice Total number of registered riders.
+    uint256 totalRiders;
+
+    /// @notice Total number of rider hire-purchase requests.
+    uint256 totalHireRequests;
+
+    //</editor-fold desc="Fields: People">
+
+    //<editor-fold desc="Fields: Amounts">
+
+    /// @notice Gross USDC senior investors have invested so far.
+    uint256 totalSeniorInvestedUsd;
+
+    /// @notice Gross USDC junior investors have invested so far.
+    uint256 totalJuniorInvestedUsd;
+
+    /// @notice Gross USDC riders have paid in, including refundable savings charges.
+    uint256 totalPayinsUsd;
+
+    /// @notice Cumulative USDC paid out to senior investors.
+    uint256 totalSeniorPayoutsUsd;
+
+    /// @notice Cumulative USDC paid out to junior investors.
+    uint256 totalJuniorPayoutsUsd;
+
+    /// @notice Cumulative USDC paid out to the owner.
+    uint256 totalOwnerPayoutsUsd;
+
+    /// @notice USDC currently held as refundable rider savings.
+    uint256 riderSavingsHeldUsd;
+
+    //</editor-fold desc="Fields: Amounts">
+}
+
 //</editor-fold desc="Structs">
 
 //<editor-fold desc="Enums">

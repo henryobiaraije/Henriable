@@ -54,7 +54,8 @@ HRiderPayinBelowMinimum,
 HRiderPayinLate,
 HRiderPaymentsCompleted,
 HRiderPaymentsNotCompleted,
-HSharingBreakdown
+HSharingBreakdown,
+HStats
 } from "./types/common.sol";
 import {HHelper} from "./helpers/HHelper.sol";
 //</editor-fold desc="Imports">
@@ -119,11 +120,10 @@ contract Henriable is HHelper {
 
         //</editor-fold desc="Verify Parameters">
 
-        // Copy the calldata struct into memory so its fields can be overridden.
+        // Copy the calldata struct into memory; the `active` field is ignored and applied
+        // through {setAssetActive} below so the stats counter moves in one place.
         HAsset memory newAsset = _asset;
-
-        // A newly added asset always starts active; the admin disables it later.
-        newAsset.active = true;
+        newAsset.active = false;
 
         // Append the asset to the registry list...
         assetsList.push(newAsset);
@@ -131,6 +131,9 @@ contract Henriable is HHelper {
         // ...and record its position as `index + 1` (length after push), which gives
         // O(1) lookups and lets 0 mean "not registered".
         assets[_asset.id] = assetsList.length;
+
+        // A newly added asset always starts active; the admin disables it later.
+        setAssetActive(getAssetStorage(_asset.id), true);
     }
 
     //</editor-fold desc="Action:Admin:Asset Add Assets ">
@@ -173,12 +176,12 @@ contract Henriable is HHelper {
             // Enabling the asset deliberately does NOT re-enable investments.
             bool disablingAsset = !_status;
             if (disablingAsset) {
-                inv.active = false;
+                setInvestmentActive(inv, false);
             }
         }
 
         // Finally, apply the requested status to the asset itself.
-        asset.active = _status;
+        setAssetActive(asset, _status);
     }
 
     //</editor-fold desc="Action:Admin:Asset: Change asset status">
@@ -265,9 +268,10 @@ contract Henriable is HHelper {
         bool level1SettingsInaccurate = !calcInvestmentOpportunityLevel1SettingsAccuracy(newInvestment);
         if (level1SettingsInaccurate) revert HInvestmentInvalidSettings();
 
-        // A newly added opportunity always starts active and Pending.
-        newInvestment.active = true;
-        newInvestment.status = HInvestmentStatus.Pending;
+        // A newly added opportunity always starts active and Pending; the helpers keep
+        // the stats counters in step.
+        setInvestmentActive(newInvestment, true);
+        setInvestmentStatus(newInvestment, HInvestmentStatus.Pending);
 
         // ...record its position as `index + 1` (length after push), which gives
         // O(1) lookups and lets 0 mean "not registered"...
@@ -300,7 +304,7 @@ contract Henriable is HHelper {
         if (investmentHasInvestors) revert HInvestmentHasInvestors(_investmentId);
 
         // Apply the requested status to the investment.
-        investment.active = _status;
+        setInvestmentActive(investment, _status);
     }
 
     //</editor-fold desc="Action:Admin:Investment: Change investment status">
@@ -465,6 +469,16 @@ contract Henriable is HHelper {
         // Record the slot in the chosen tier.
         theInvestorsList.push(msg.sender);
         theInvestors[msg.sender] = theInvestorsList.length;
+
+        // Keep the platform totals in step: one filled position and the gross buy-in.
+        bool seniorInvestment = _investmentType == HInvestmentType.Senior;
+        if (seniorInvestment) {
+            stats.totalSeniorPositions += 1;
+            stats.totalSeniorInvestedUsd += theInvestorBuyingPrice;
+        } else {
+            stats.totalJuniorPositions += 1;
+            stats.totalJuniorInvestedUsd += theInvestorBuyingPrice;
+        }
 
         // Let the status helper react (e.g. mark the opportunity done once full).
         maybeUpdateInvestmentStatus(_investmentId);
@@ -732,6 +746,9 @@ contract Henriable is HHelper {
         );
         investment.riderPayinIndexes.push(riderPayinsList.length);
 
+        // Gross rider payments feed the platform payins total.
+        stats.totalPayinsUsd += _approvedUSD;
+
         // The rider's payment is the hire-purchase portion plus the refundable savings charge.
         uint256 hirePurchaseAmount = _approvedUSD - riderSavingsAmount;
 
@@ -811,9 +828,10 @@ contract Henriable is HHelper {
         // twice. The savings were held in the contract, never transferred out.
         uint256 riderSavingsAmount = investment.riderSavings.totalAmountSaved;
         investment.riderSavings.totalAmountSaved = 0;
+        stats.riderSavingsHeldUsd -= riderSavingsAmount;
 
         // Hand over ownership: mark complete and record the times.
-        investment.status = HInvestmentStatus.Complete;
+        setInvestmentStatus(investment, HInvestmentStatus.Complete);
         investment.timeRiderCompletedPayments = block.timestamp;
         investment.timeNftTransferedToRider = block.timestamp;
 
@@ -835,6 +853,31 @@ contract Henriable is HHelper {
     //</editor-fold desc="Action:Rider: Complete payment">
 
     //</editor-fold desc="Actions">
+
+    //<editor-fold desc="Getters">
+
+    /// @notice Returns every aggregate statistic the frontend displays in one call.
+    /// @dev    Counters are maintained in O(1) as the contract is used; the totals that
+    ///         mirror list lengths are filled in here so there is a single source of truth.
+    ///         Investor figures count filled slots, not distinct addresses.
+    /// @return platformStats The platform-wide statistics.
+    function getStats() external view returns (HStats memory) {
+        HStats memory platformStats = stats;
+
+        platformStats.totalAssets = assetsList.length;
+        platformStats.totalInvestments = investmentsList.length;
+        platformStats.totalInvestors = investorsList.length;
+        platformStats.totalRiders = ridersList.length;
+        platformStats.totalHireRequests = ridersHirePurchasesRequestsList.length;
+
+        return platformStats;
+    }
+
+    //</editor-fold desc="Getters">
+
+    //<editor-fold desc="Testnet test">
+
+
 
     /// @notice Maps an investment id => 1-based position in {ownerPayoutsList} of the
     ///         most recent owner payout for that investment.
@@ -863,4 +906,6 @@ contract Henriable is HHelper {
     function getSet() external view returns (uint256[] memory){
         return testStateList;
     }
+
+    //</editor-fold desc="Testnet test">
 }
