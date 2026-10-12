@@ -46,6 +46,13 @@ contract HHelperCalcSeniorPoolPaidSoFarTest is Test, HHelper {
         investments[INVESTMENT_ID] = investmentsList.length;
     }
 
+    /// @dev Mirrors {Henriable.actionInvest}: every seat pushes the investor and records
+    ///      its 1-based position in the index mapping.
+    function addSeniorSeat(HInvestment storage investment, address investor) internal {
+        investment.seniorInvestorsList.push(investor);
+        investment.seniorInvestors[investor] = investment.seniorInvestorsList.length;
+    }
+
     function test_CalcSeniorPoolPaidSoFar_ReturnsZero_WhenNoSeniorInvestors() public {
         seedInvestment();
 
@@ -58,13 +65,28 @@ contract HHelperCalcSeniorPoolPaidSoFarTest is Test, HHelper {
         seedInvestment();
 
         HInvestment storage investment = getInvestmentStorage(INVESTMENT_ID);
-        investment.seniorInvestorsList.push(SENIOR_ONE);
-        investment.seniorInvestorsList.push(SENIOR_TWO);
+        addSeniorSeat(investment, SENIOR_ONE);
+        addSeniorSeat(investment, SENIOR_TWO);
         investment.investorPayoutHistory[SENIOR_ONE].totalAmountPaid = 100;
         investment.investorPayoutHistory[SENIOR_TWO].totalAmountPaid = 250;
 
         uint256 paidSoFar = calcSeniorPoolPaidSoFar(investment);
 
         assertEq(paidSoFar, 350);
+    }
+
+    function test_CalcSeniorPoolPaidSoFar_CountsInvestorOnce_WhenHoldingMultipleSeats() public {
+        seedInvestment();
+
+        HInvestment storage investment = getInvestmentStorage(INVESTMENT_ID);
+        addSeniorSeat(investment, SENIOR_ONE);
+        addSeniorSeat(investment, SENIOR_ONE);
+        addSeniorSeat(investment, SENIOR_TWO);
+        investment.investorPayoutHistory[SENIOR_ONE].totalAmountPaid = 200;
+        investment.investorPayoutHistory[SENIOR_TWO].totalAmountPaid = 100;
+
+        uint256 paidSoFar = calcSeniorPoolPaidSoFar(investment);
+
+        assertEq(paidSoFar, 300);
     }
 }

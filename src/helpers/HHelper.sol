@@ -304,14 +304,23 @@ contract HHelper is Ownable {
     //<editor-fold desc="calcSeniorPoolPaidSoFar">
 
     /// @notice Sums how much the senior investor pool has been paid so far on an investment.
+    /// @dev    An address may hold several senior seats, so a naive sum over the list would
+    ///         count that investor's aggregate payout history once per seat. The mapping
+    ///         {HInvestment.seniorInvestors} points at the investor's most recent seat, so
+    ///         only that seat's entry counts, keeping each investor's total counted once.
     /// @param investment The investment (storage reference).
     /// @return The total amount paid to senior investors, in USDC.
     function calcSeniorPoolPaidSoFar(HInvestment storage investment) internal view returns (uint256) {
         uint256 seniorPaidSoFar = 0;
-        address[] storage seniorInvestors = investment.seniorInvestorsList;
+        address[] storage seniorInvestorsList = investment.seniorInvestorsList;
 
-        for (uint256 i = 0; i < seniorInvestors.length; i++) {
-            seniorPaidSoFar += investment.investorPayoutHistory[seniorInvestors[i]].totalAmountPaid;
+        for (uint256 i = 0; i < seniorInvestorsList.length; i++) {
+            address investor = seniorInvestorsList[i];
+
+            bool lastSeatOfInvestor = investment.seniorInvestors[investor] == i + 1;
+            if (lastSeatOfInvestor) {
+                seniorPaidSoFar += investment.investorPayoutHistory[investor].totalAmountPaid;
+            }
         }
 
         return seniorPaidSoFar;
@@ -1000,7 +1009,8 @@ contract HHelper is Ownable {
     }
 
     /// @notice Returns a senior investor's 1-based index within an investment's senior list.
-    /// @dev    Positions are 1-based; 0 means the investor is not in the list.
+    /// @dev    Positions are 1-based; 0 means the investor is not in the list. When an
+    ///         investor holds several seats, this is their most recently taken seat.
     /// @param investmentId The id of the investment.
     /// @param investor The investor address.
     /// @return The 1-based index, or 0 if not present.
@@ -1013,7 +1023,8 @@ contract HHelper is Ownable {
     }
 
     /// @notice Returns a junior investor's 1-based index within an investment's junior list.
-    /// @dev    Positions are 1-based; 0 means the investor is not in the list.
+    /// @dev    Positions are 1-based; 0 means the investor is not in the list. When an
+    ///         investor holds several seats, this is their most recently taken seat.
     /// @param investmentId The id of the investment.
     /// @param investor The investor address.
     /// @return The 1-based index, or 0 if not present.

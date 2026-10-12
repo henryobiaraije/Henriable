@@ -39,7 +39,6 @@ HInvestmentNotPending,
 HInvestmentStatus,
 HInvestmentType,
 HInvestor,
-HInvestorAlreadyInvested,
 HInvestorInvalidAge,
 HOwner2IsOwner1,
 HPayingHistory,
@@ -403,6 +402,9 @@ contract Henriable is HHelper {
     ///         and age. The asset defines the per-investor buying price and the number
     ///         of slots, so the required amount is the tier's one-investor buying price.
     ///         The contract pulls exactly that amount from the investor's USDC.
+    ///         An address may call this repeatedly and in either tier, taking one seat
+    ///         per call, so the same address can appear more than once in a tier's list
+    ///         (each entry is a separate seat and is paid its own equal share).
     ///         States updated: {investorsList}, {investors}, and the chosen tier's
     ///         list and mapping inside {investmentsList}.
     /// @param _investor The investor profile (name, country, age) to create or update.
@@ -461,11 +463,8 @@ contract Henriable is HHelper {
             ? asset.totalNumberOfSeniorInvestorsNeeded
             : asset.totalNumberOfJuniorInvestorsNeeded;
 
-        // An address may take at most one slot per tier.
-        {
-            bool investorAlreadyInvested = theInvestors[msg.sender] != 0;
-            if (investorAlreadyInvested) revert HInvestorAlreadyInvested(_investmentId, msg.sender);
-        }
+        // An address may invest any number of times, in either tier, taking one seat per
+        // call; the only limit is the tier's remaining slots (checked below).
 
         // There must still be an open slot (also guards against a zero-slot asset).
         {

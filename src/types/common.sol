@@ -632,11 +632,6 @@ error HInvestmentNoOpenSlot(bytes32 id);
 /// @param investor The unknown investor address.
 error HInvestorDoesNotExist(address investor);
 
-/// @notice Thrown when an investor tries to take a second slot in the same tier.
-/// @param investmentId The investment id.
-/// @param investor The investor address.
-error HInvestorAlreadyInvested(bytes32 investmentId, address investor);
-
 /// @notice Thrown when an investor is younger than the required minimum age.
 /// @param age The supplied age.
 error HInvestorInvalidAge(uint8 age);

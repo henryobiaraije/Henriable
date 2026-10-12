@@ -57,6 +57,7 @@ contract HHelperCalcSharingFormulaTest is Test, HHelper {
         investment.assetId = ASSET_ID;
         investment.minimumRiderPeriodicPayingsUsd = 100;
         investment.seniorInvestorsList.push(SENIOR_INVESTOR);
+        investment.seniorInvestors[SENIOR_INVESTOR] = investment.seniorInvestorsList.length;
         investments[INVESTMENT_ID] = investmentsList.length;
     }
 
