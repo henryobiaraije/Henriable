@@ -498,6 +498,15 @@ contract HHelper is Ownable {
 
     //</editor-fold desc="Maybe">
 
+    //<editor-fold desc="Action: Maybe">
+
+    /// @notice Provided for frontend to call when they suspect a status should have changed but it did not.
+    ///         e.g. When start investment countdown has begone but investment is still pending. We can't run a cron job so it has to be triggered somehow minimally.
+    function actionMaybeUpdateStatus(bytes32 _investmentId) external{
+        maybeUpdateInvestmentStatus(_investmentId);
+    }
+    //</editor-fold desc="Action: Maybe">
+
     //<editor-fold desc="Upserts">
 
     /// @notice Creates an investor profile for an address, or updates it if it exists.
@@ -788,7 +797,7 @@ contract HHelper is Ownable {
 
     //<editor-fold desc="Getters">
 
-    // ------------------------- Asset getters -------------------------
+    //<editor-fold desc="Owner Getters">
 
     /// @notice Returns the USDC token used by the platform.
     /// @return The {IERC20} owner USDC token.
@@ -801,6 +810,10 @@ contract HHelper is Ownable {
     function getOwner2() external view returns (address) {
         return owner2;
     }
+
+    //</editor-fold desc="Owner Getters">
+
+    //<editor-fold desc="Asset Getters">
 
     /// @notice Returns the total number of registered assets.
     /// @return The length of {assetsList}.
@@ -878,7 +891,9 @@ contract HHelper is Ownable {
         return assetInvestments[assetId].length;
     }
 
-    // ----------------------- Investment getters ----------------------
+    //</editor-fold desc="Asset Getters">
+
+    //<editor-fold desc="Investment Getters">
 
     /// @notice Returns the total number of investment opportunities.
     /// @return The length of {investmentsList}.
@@ -1136,7 +1151,9 @@ contract HHelper is Ownable {
         return investmentsList[index].contractPayoutHistory;
     }
 
-    // ------------------------ Investor getters -----------------------
+    //</editor-fold desc="Investment Getters">
+
+    //<editor-fold desc="Investor Getters">
 
     /// @notice Returns the total number of registered investors.
     /// @return The length of {investorsList}.
@@ -1189,7 +1206,9 @@ contract HHelper is Ownable {
         return investorsList[indexPlusOne - 1];
     }
 
-    // ------------------------- Rider getters -------------------------
+    //</editor-fold desc="Investor Getters">
+
+    //<editor-fold desc="Rider Getters">
 
     /// @notice Returns the total number of registered riders.
     /// @return The length of {ridersList}.
@@ -1242,7 +1261,9 @@ contract HHelper is Ownable {
         return ridersList[indexPlusOne - 1];
     }
 
-    // --------------------- Hire-request getters ----------------------
+    //</editor-fold desc="Rider Getters">
+
+    //<editor-fold desc="Hire-Request Getters">
 
     /// @notice Returns the total number of rider hire-purchase requests.
     /// @return The length of {ridersHirePurchasesRequestsList}.
@@ -1273,7 +1294,9 @@ contract HHelper is Ownable {
         return rejectedRiders[riderId][investmentId];
     }
 
-    // ----------------------- Rider payin getters ---------------------
+    //</editor-fold desc="Hire-Request Getters">
+
+    //<editor-fold desc="Rider Payin Getters">
 
     /// @notice Returns the total number of rider payments.
     /// @return The length of {riderPayinsList}.
@@ -1320,7 +1343,9 @@ contract HHelper is Ownable {
         return calcRiderAmountToPayNow(investment, asset);
     }
 
-    // --------------------- Investor payout getters -------------------
+    //</editor-fold desc="Rider Payin Getters">
+
+    //<editor-fold desc="Investor Payout Getters">
 
     /// @notice Returns the total number of investor payouts.
     /// @return The length of {investorPayoutList}.
@@ -1347,7 +1372,9 @@ contract HHelper is Ownable {
         return investorPayouts[investor][investmentId];
     }
 
-    // ---------------------- Owner payout getters ---------------------
+    //</editor-fold desc="Investor Payout Getters">
+
+    //<editor-fold desc="Owner Payout Getters">
 
     /// @notice Returns the total number of owner payouts.
     /// @return The length of {ownerPayoutsList}.
@@ -1380,7 +1407,9 @@ contract HHelper is Ownable {
         return ownerPayoutHistory[investmentId];
     }
 
-    // ---------------------- Completed getters ------------------------
+    //</editor-fold desc="Owner Payout Getters">
+
+    //<editor-fold desc="Completed Getters">
 
     /// @notice Returns the number of completed rider investments.
     /// @return The length of {completedRiderInvestmentList}.
@@ -1408,7 +1437,9 @@ contract HHelper is Ownable {
         return investmentsCompleted[index];
     }
 
-    // ---------------------- Whole-list getters -----------------------
+    //</editor-fold desc="Completed Getters">
+
+    //<editor-fold desc="Whole-List Getters">
 
     /// @notice Returns every registered investor profile.
     /// @dev    Returns the whole list in one call; the paginated {getInvestorsCount} /
@@ -1457,6 +1488,8 @@ contract HHelper is Ownable {
     function getOwnerPayouts() external view returns (HOwnerPayout[] memory) {
         return ownerPayoutsList;
     }
+
+    //</editor-fold desc="Whole-List Getters">
 
     //</editor-fold desc="Getters">
 }
