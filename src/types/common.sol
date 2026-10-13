@@ -599,7 +599,9 @@ error HInvestmentHasInvestors(bytes32 id);
 ///         cover the profits promised to senior and junior investors.
 error HInvestmentInvalidSettings();
 
-/// @notice Thrown when times are set on an investment that is no longer Pending.
+/// @notice Thrown when next-round times are changed on an investment whose current
+///         status does not allow it (no longer Pending, or, when extending a round,
+///         no longer AcceptingInvestments).
 /// @param id The investment id.
 error HInvestmentNotPending(bytes32 id);
 

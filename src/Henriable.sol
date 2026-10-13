@@ -331,7 +331,7 @@ contract Henriable is HHelper {
 
     /// @notice Sets the start and end of the next investment round for an investment.
     /// @dev    Only an owner (admin: owner1 or owner2) may call this.
-    ///         The opportunity must still be Pending and its asset active, and the
+    ///         The opportunity must still be Pending or in investment(to extend it) and its asset active, and the
     ///         round must be in the future with `_endTime` after `_startTime`.
     ///         States updated: {investmentsList}.
     /// @param _investmentId The id of the investment to schedule.
@@ -344,12 +344,15 @@ contract Henriable is HHelper {
         // Get the modifiable investment (reverts if it is not registered).
         HInvestment storage investment = getInvestmentStorage(_investmentId);
 
-        // Times may only be set while the opportunity is still Pending.
-        HInvestmentStatus[] memory allowedStatuses = new HInvestmentStatus[](1);
+        // Times may be set while the opportunity is still Pending, or while it is
+        // AcceptingInvestments so the admin can extend an open round. The array must
+        // be sized for both entries.
+        HInvestmentStatus[] memory allowedStatuses = new HInvestmentStatus[](2);
         allowedStatuses[0] = HInvestmentStatus.Pending;
+        allowedStatuses[1] = HInvestmentStatus.AcceptingInvestments;
 
-        bool investmentNotPending = !isInvestmentStatus(_investmentId, allowedStatuses);
-        if (investmentNotPending) revert HInvestmentNotPending(_investmentId);
+        bool statusNotSettable = !isInvestmentStatus(_investmentId, allowedStatuses);
+        if (statusNotSettable) revert HInvestmentNotPending(_investmentId);
 
         // The backing asset must still be active, i.e. there must be an asset to invest in.
         HAsset storage asset = getAssetStorage(investment.assetId);
