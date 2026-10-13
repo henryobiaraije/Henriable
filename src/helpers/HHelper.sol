@@ -1408,5 +1408,55 @@ contract HHelper is Ownable {
         return investmentsCompleted[index];
     }
 
+    // ---------------------- Whole-list getters -----------------------
+
+    /// @notice Returns every registered investor profile.
+    /// @dev    Returns the whole list in one call; the paginated {getInvestorsCount} /
+    ///         {getInvestorAt} pair remains available for callers that page.
+    /// @return All entries of {investorsList}.
+    function getInvestors() external view returns (HInvestor[] memory) {
+        return investorsList;
+    }
+
+    /// @notice Returns every registered rider profile.
+    /// @dev    Returns the whole list in one call; the paginated {getRidersCount} /
+    ///         {getRiderAt} pair remains available for callers that page.
+    /// @return All entries of {ridersList}.
+    function getRiders() external view returns (HRider[] memory) {
+        return ridersList;
+    }
+
+    /// @notice Returns every rider hire-purchase request ever made.
+    /// @dev    Returns the whole list in one call; the paginated {getHireRequestsCount} /
+    ///         {getHireRequestAt} pair remains available for callers that page.
+    /// @return All entries of {ridersHirePurchasesRequestsList}.
+    function getHireRequests() external view returns (HRiderHirePurchaseRequest[] memory) {
+        return ridersHirePurchasesRequestsList;
+    }
+
+    /// @notice Returns every investor payout ever made.
+    /// @dev    Returns the whole list in one call; the paginated {getInvestorPayoutsCount} /
+    ///         {getInvestorPayoutAt} pair remains available for callers that page.
+    /// @return All entries of {investorPayoutList}.
+    function getInvestorPayouts() external view returns (HInvestorPayout[] memory) {
+        return investorPayoutList;
+    }
+
+    /// @notice Returns every rider periodic payment ever made.
+    /// @dev    Returns the whole list in one call; the paginated {getRiderPayinsCount} /
+    ///         {getRiderPayinAt} pair remains available for callers that page.
+    /// @return All entries of {riderPayinsList}.
+    function getRiderPayins() external view returns (HRiderPayin[] memory) {
+        return riderPayinsList;
+    }
+
+    /// @notice Returns every owner/contract payout ever made.
+    /// @dev    Returns the whole list in one call; the paginated {getOwnerPayoutsCount} /
+    ///         {getOwnerPayoutAt} pair remains available for callers that page.
+    /// @return All entries of {ownerPayoutsList}.
+    function getOwnerPayouts() external view returns (HOwnerPayout[] memory) {
+        return ownerPayoutsList;
+    }
+
     //</editor-fold desc="Getters">
 }
