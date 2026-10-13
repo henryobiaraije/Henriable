@@ -3,42 +3,40 @@ pragma solidity ^0.8.13;
 
 //<editor-fold desc="Imports">
 
-
-
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {HMath} from "./HMath.sol";
 import {
-HAsset,
-HAssetDoesNotExist,
-HInvestment,
-HInvestmentDoesNotExist,
-HInvestmentStatus,
-HInvestor,
-HInvestorDoesNotExist,
-HRider,
-HRiderDoesNotExist,
-HRiderHirePurchaseRequest,
-HRiderPayin,
-HRiderSavings,
-HPayingHistory,
-HOwnerPayout,
-HOwnerPayoutsHistory,
-HInvestorPayout,
-HInvestorPayoutsHistory,
-HInvestmentPayoutsHistory,
-HRiderSavingsHistory,
-HSharingBreakdown,
-HStats
+    HAsset,
+    HAssetDoesNotExist,
+    HInvestment,
+    HInvestmentDoesNotExist,
+    HInvestmentStatus,
+    HInvestor,
+    HInvestorDoesNotExist,
+    HRider,
+    HRiderDoesNotExist,
+    HRiderHirePurchaseRequest,
+    HRiderPayin,
+    HRiderSavings,
+    HPayingHistory,
+    HOwnerPayout,
+    HOwnerPayoutsHistory,
+    HInvestorPayout,
+    HInvestorPayoutsHistory,
+    HInvestmentPayoutsHistory,
+    HRiderSavingsHistory,
+    HSharingBreakdown,
+    HStats
 } from "../types/common.sol";
+
 //</editor-fold desc="Imports">
 
 /// @title Helper features and modifiers.
 /// @author Obiaraije Henry
 /// @dev Inherits OpenZeppelin {Ownable} so the launch owner is set at construction.
 contract HHelper is Ownable {
-
     // Provides safeTransfer/safeTransferFrom, which revert on failure.
     using SafeERC20 for IERC20;
 
@@ -214,9 +212,9 @@ contract HHelper is Ownable {
     /// @param statuses The statuses to test for.
     /// @return True if the investment's current status equals any entry in `statuses`.
     function isInvestmentStatus(bytes32 investmentId, HInvestmentStatus[] memory statuses)
-    internal
-    view
-    returns (bool)
+        internal
+        view
+        returns (bool)
     {
         HInvestmentStatus currentStatus = getInvestmentStorage(investmentId).status;
         for (uint256 i = 0; i < statuses.length; i++) {
@@ -238,7 +236,6 @@ contract HHelper is Ownable {
     /// @return True when the pools cover the cost price and the sell price covers the
     ///         investor principal, their profits and the owner's profit.
     function isAssetSettingsCorrect(HAsset memory asset) internal pure returns (bool) {
-
         //<editor-fold desc="Get Senior/Junior Buying amounts">
 
         // Total the senior pool pays to buy in: per-investor price x number of senior slots.
@@ -299,6 +296,7 @@ contract HHelper is Ownable {
     function calcInvestmentOpportunityLevel1SettingsAccuracy(HInvestment storage) internal pure returns (bool) {
         return true;
     }
+
     //</editor-fold desc="calcInvestmentOpportunityLevel1SettingsAccuracy">
 
     //<editor-fold desc="calcSeniorPoolPaidSoFar">
@@ -309,7 +307,7 @@ contract HHelper is Ownable {
     ///         {HInvestment.seniorInvestors} points at the investor's most recent seat, so
     ///         only that seat's entry counts, keeping each investor's total counted once.
     /// @param investment The investment (storage reference).
-    /// @return The total amount paid to senior investors, in USDC.
+    /// @return The total amount paid to senior investors, in USDC base units (6 decimals).
     function calcSeniorPoolPaidSoFar(HInvestment storage investment) internal view returns (uint256) {
         uint256 seniorPaidSoFar = 0;
         address[] storage seniorInvestorsList = investment.seniorInvestorsList;
@@ -325,6 +323,7 @@ contract HHelper is Ownable {
 
         return seniorPaidSoFar;
     }
+
     //</editor-fold desc="calcSeniorPoolPaidSoFar">
 
     //<editor-fold desc="calcSharingFormula">
@@ -341,17 +340,19 @@ contract HHelper is Ownable {
     ///         overflow.
     /// @param investment The investment being paid (storage reference).
     /// @param asset The asset backing the investment (storage reference).
-    /// @param amount The rider payment to split, in USDC (excludes the savings charge).
+    /// @param amount The rider payment to split, in USDC base units (6 decimals)
+    ///        (excludes the savings charge).
     /// @return The per-bucket breakdown.
     function calcSharingFormula(HInvestment storage investment, HAsset storage asset, uint256 amount)
-    internal
-    view
-    returns (HSharingBreakdown memory)
+        internal
+        view
+        returns (HSharingBreakdown memory)
     {
         //<editor-fold desc="Check whether the senior pool is still owed money">
 
         // What the whole senior pool must receive over the term: slots x (buying price + profit).
-        uint256 seniorPoolTotal = asset.totalNumberOfSeniorInvestorsNeeded * (asset.oneSeniorInvestorBuyingPrice + asset.oneSeniorInvestorProfit);
+        uint256 seniorPoolTotal = asset.totalNumberOfSeniorInvestorsNeeded
+            * (asset.oneSeniorInvestorBuyingPrice + asset.oneSeniorInvestorProfit);
         // What the senior pool has already received.
         uint256 seniorPoolPaidSoFar = calcSeniorPoolPaidSoFar(investment);
         // The senior pool still gets paid until it has received its full target.
@@ -399,6 +400,7 @@ contract HHelper is Ownable {
 
         //</editor-fold desc="Return the breakdown">
     }
+
     //</editor-fold desc="calcSharingFormula">
 
     //<editor-fold desc="calcRiderAmountToPayNow">
@@ -410,11 +412,11 @@ contract HHelper is Ownable {
     ///         always added on top so the rider's refundable savings keep accumulating.
     /// @param investment The investment being paid (storage reference).
     /// @param asset The asset backing the investment (storage reference).
-    /// @return The amount due for the next instalment, in USDC.
+    /// @return The amount due for the next instalment, in USDC base units (6 decimals).
     function calcRiderAmountToPayNow(HInvestment storage investment, HAsset storage asset)
-    internal
-    view
-    returns (uint256)
+        internal
+        view
+        returns (uint256)
     {
         uint256 totalAmountToPay = asset.sellPrice;
         uint256 totalAmountPaid = investment.riderPayinsHistory.totalAmountPaid;
@@ -429,6 +431,7 @@ contract HHelper is Ownable {
 
         return requiredThisPayment + asset.riderSlashableRepayableExtraCharge;
     }
+
     //</editor-fold desc="calcRiderAmountToPayNow">
 
     //</editor-fold desc="Calculators">
@@ -457,8 +460,7 @@ contract HHelper is Ownable {
             // The round may only open once the admin has set a start time and now is
             // within the [start, end] window.
             bool investmentTimeSet = investment.timeNextInvestmentStart != 0;
-            bool withinInvestmentWindow = investmentTimeSet
-                && block.timestamp >= investment.timeNextInvestmentStart
+            bool withinInvestmentWindow = investmentTimeSet && block.timestamp >= investment.timeNextInvestmentStart
                 && block.timestamp <= investment.timeNextInvestmentEnd;
 
             if (withinInvestmentWindow) {
@@ -485,8 +487,7 @@ contract HHelper is Ownable {
         if (currentStatus == HInvestmentStatus.InvestmentDone) {
             // The hire round may open once the admin has set a window and now is within it.
             bool hireTimeSet = investment.timeNextRiderHireRequestStart != 0;
-            bool withinHireWindow = hireTimeSet
-                && block.timestamp >= investment.timeNextRiderHireRequestStart
+            bool withinHireWindow = hireTimeSet && block.timestamp >= investment.timeNextRiderHireRequestStart
                 && block.timestamp <= investment.timeNextRiderHireRequestEnd;
 
             if (withinHireWindow) {
@@ -502,9 +503,10 @@ contract HHelper is Ownable {
 
     /// @notice Provided for frontend to call when they suspect a status should have changed but it did not.
     ///         e.g. When start investment countdown has begone but investment is still pending. We can't run a cron job so it has to be triggered somehow minimally.
-    function actionMaybeUpdateStatus(bytes32 _investmentId) external{
+    function actionMaybeUpdateStatus(bytes32 _investmentId) external {
         maybeUpdateInvestmentStatus(_investmentId);
     }
+
     //</editor-fold desc="Action: Maybe">
 
     //<editor-fold desc="Upserts">
@@ -540,7 +542,7 @@ contract HHelper is Ownable {
             existingRider.age = riderAge;
         } else {
             HRider memory newRider =
-                            HRider({riderAddress: riderAddress, name: riderName, country: riderCountry, age: riderAge});
+                HRider({riderAddress: riderAddress, name: riderName, country: riderCountry, age: riderAge});
             ridersList.push(newRider);
             riders[riderAddress] = ridersList.length;
         }
@@ -559,9 +561,11 @@ contract HHelper is Ownable {
     /// @param investment The investment the payment belongs to (storage reference).
     /// @param investmentId The id of the investment.
     /// @param breakdown The owner/investor split of the payment.
-    function recordDistribution(HInvestment storage investment, bytes32 investmentId, HSharingBreakdown memory breakdown)
-    internal
-    {
+    function recordDistribution(
+        HInvestment storage investment,
+        bytes32 investmentId,
+        HSharingBreakdown memory breakdown
+    ) internal {
         // Owner accounting.
         if (breakdown.ownerAmount != 0) {
             ownerPayoutsList.push(
@@ -586,8 +590,8 @@ contract HHelper is Ownable {
         // Aggregate investment accounting.
         HInvestmentPayoutsHistory storage investmentHistory = investment.investmentPayoutHistory;
         investmentHistory.investmentId = investmentId;
-        investmentHistory.totalAmountPaid +=
-            breakdown.ownerAmount + breakdown.seniorInvestorsAmount + breakdown.juniorInvestorsAmount;
+        investmentHistory.totalAmountPaid += breakdown.ownerAmount + breakdown.seniorInvestorsAmount
+        + breakdown.juniorInvestorsAmount;
         investmentHistory.totalNumberOfTimesPaid += 1;
 
         // Running platform payout totals.
@@ -600,7 +604,7 @@ contract HHelper is Ownable {
     /// @dev    The savings are held in the contract (not transferred): they are refunded when
     ///         the rider completes and can be slashed if the rider defaults.
     /// @param investment The investment the payment belongs to (storage reference).
-    /// @param amount The savings charge to add, in USDC.
+    /// @param amount The savings charge to add, in USDC base units (6 decimals).
     function recordRiderSavings(HInvestment storage investment, uint256 amount) internal {
         bool noSavings = amount == 0;
         if (noSavings) {
@@ -614,20 +618,19 @@ contract HHelper is Ownable {
         // Rider savings are held in the contract, so they count toward the held total.
         stats.riderSavingsHeldUsd += amount;
 
-        savings.savings.push(
-            HRiderSavings({
-                riderAddress: investment.riderWhoHiredIt,
-                amountSaved: amount,
-                timeSaved: block.timestamp
-            })
-        );
+        savings.savings
+            .push(
+                HRiderSavings({
+                    riderAddress: investment.riderWhoHiredIt, amountSaved: amount, timeSaved: block.timestamp
+                })
+            );
     }
 
     /// @notice Records an equal-share payout for every investor in a tier.
     /// @param investment The investment the payment belongs to (storage reference).
     /// @param investmentId The id of the investment.
     /// @param tierInvestors The tier's investor list.
-    /// @param poolAmount The total amount to split across the tier, in USDC.
+    /// @param poolAmount The total amount to split across the tier, in USDC base units (6 decimals).
     function recordTierPayouts(
         HInvestment storage investment,
         bytes32 investmentId,
@@ -677,7 +680,7 @@ contract HHelper is Ownable {
 
     /// @notice Transfers an equal share of a tier's pool to each of its investors.
     /// @param tierInvestors The tier's investor list.
-    /// @param poolAmount The total amount to split across the tier, in USDC.
+    /// @param poolAmount The total amount to split across the tier, in USDC base units (6 decimals).
     function transferTierShares(address[] storage tierInvestors, uint256 poolAmount) internal {
         uint256 investorsCount = tierInvestors.length;
         if (investorsCount == 0 || poolAmount == 0) {
@@ -931,23 +934,23 @@ contract HHelper is Ownable {
     /// @return active Whether the opportunity is active.
     /// @return assetId Asset being invested in.
     /// @return investmentsDoneAt Time the funding target was reached.
-    /// @return riderInitialBuyinUsd Initial rider buy-in, in USDC.
+    /// @return riderInitialBuyinUsd Initial rider buy-in, in USDC base units (6 decimals).
     /// @return periodicRiderPayingInMinutes Length of a rider period, in minutes.
-    /// @return minimumRiderPeriodicPayingsUsd Minimum rider payment per period, in USDC.
+    /// @return minimumRiderPeriodicPayingsUsd Minimum rider payment per period, in USDC base units (6 decimals).
     /// @return status Current lifecycle status.
     function getInvestmentCore(uint256 index)
-    external
-    view
-    returns (
-        bytes32 investmentId,
-        bool active,
-        bytes32 assetId,
-        uint256 investmentsDoneAt,
-        uint256 riderInitialBuyinUsd,
-        uint256 periodicRiderPayingInMinutes,
-        uint256 minimumRiderPeriodicPayingsUsd,
-        HInvestmentStatus status
-    )
+        external
+        view
+        returns (
+            bytes32 investmentId,
+            bool active,
+            bytes32 assetId,
+            uint256 investmentsDoneAt,
+            uint256 riderInitialBuyinUsd,
+            uint256 periodicRiderPayingInMinutes,
+            uint256 minimumRiderPeriodicPayingsUsd,
+            HInvestmentStatus status
+        )
     {
         HInvestment storage inv = investmentsList[index];
         investmentId = inv.investmentId;
@@ -967,14 +970,14 @@ contract HHelper is Ownable {
     /// @return timeNextRiderHireRequestStart Start of the next hire-request round.
     /// @return timeNextRiderHireRequestEnd End of the next hire-request round.
     function getInvestmentSchedule(uint256 index)
-    external
-    view
-    returns (
-        uint256 timeNextInvestmentStart,
-        uint256 timeNextInvestmentEnd,
-        uint256 timeNextRiderHireRequestStart,
-        uint256 timeNextRiderHireRequestEnd
-    )
+        external
+        view
+        returns (
+            uint256 timeNextInvestmentStart,
+            uint256 timeNextInvestmentEnd,
+            uint256 timeNextRiderHireRequestStart,
+            uint256 timeNextRiderHireRequestEnd
+        )
     {
         HInvestment storage inv = investmentsList[index];
         timeNextInvestmentStart = inv.timeNextInvestmentStart;
@@ -991,15 +994,15 @@ contract HHelper is Ownable {
     /// @return timeRiderCompletedPayments Time the rider completed all payments.
     /// @return timeNftTransferedToRider Time the NFT title was transferred to the rider.
     function getInvestmentRiderInfo(uint256 index)
-    external
-    view
-    returns (
-        address riderWhoHiredIt,
-        uint256 riderNextPayinDate,
-        uint256 nftTokenId,
-        uint256 timeRiderCompletedPayments,
-        uint256 timeNftTransferedToRider
-    )
+        external
+        view
+        returns (
+            address riderWhoHiredIt,
+            uint256 riderNextPayinDate,
+            uint256 nftTokenId,
+            uint256 timeRiderCompletedPayments,
+            uint256 timeNftTransferedToRider
+        )
     {
         HInvestment storage inv = investmentsList[index];
         riderWhoHiredIt = inv.riderWhoHiredIt;
@@ -1029,11 +1032,7 @@ contract HHelper is Ownable {
     /// @param investmentId The id of the investment.
     /// @param investor The investor address.
     /// @return The 1-based index, or 0 if not present.
-    function getSeniorInvestorIndex(bytes32 investmentId, address investor)
-    external
-    view
-    returns (uint256)
-    {
+    function getSeniorInvestorIndex(bytes32 investmentId, address investor) external view returns (uint256) {
         return getInvestmentStorage(investmentId).seniorInvestors[investor];
     }
 
@@ -1043,22 +1042,14 @@ contract HHelper is Ownable {
     /// @param investmentId The id of the investment.
     /// @param investor The investor address.
     /// @return The 1-based index, or 0 if not present.
-    function getJuniorInvestorIndex(bytes32 investmentId, address investor)
-    external
-    view
-    returns (uint256)
-    {
+    function getJuniorInvestorIndex(bytes32 investmentId, address investor) external view returns (uint256) {
         return getInvestmentStorage(investmentId).juniorInvestors[investor];
     }
 
     /// @notice Returns the rider ids of the hire-purchase requests for an investment.
     /// @param index The index into {investmentsList}.
     /// @return An array of rider ids.
-    function getRidersHirePurchaseRequestsList(uint256 index)
-    external
-    view
-    returns (bytes32[] memory)
-    {
+    function getRidersHirePurchaseRequestsList(uint256 index) external view returns (bytes32[] memory) {
         bytes32 investmentId = investmentsList[index].investmentId;
         uint256 requestsCount = investmentsList[index].ridersHirePurchaseRequestsList.length;
         bytes32[] memory riderIds = new bytes32[](requestsCount);
@@ -1074,9 +1065,9 @@ contract HHelper is Ownable {
     /// @param position The position in the investment's hire-request list.
     /// @return A storage reference to the hire-purchase request.
     function getInvestmentHireRequestStorage(bytes32 investmentId, uint256 position)
-    internal
-    view
-    returns (HRiderHirePurchaseRequest storage)
+        internal
+        view
+        returns (HRiderHirePurchaseRequest storage)
     {
         uint256 indexPlusOne = getInvestmentStorage(investmentId).ridersHirePurchaseRequestsList[position];
         return ridersHirePurchasesRequestsList[indexPlusOne - 1];
@@ -1087,33 +1078,21 @@ contract HHelper is Ownable {
     /// @param investmentId The id of the investment.
     /// @param rider The rider address.
     /// @return The 1-based position, or 0 if not present.
-    function getRiderHirePurchaseRequestIndex(bytes32 investmentId, address rider)
-    external
-    view
-    returns (uint256)
-    {
+    function getRiderHirePurchaseRequestIndex(bytes32 investmentId, address rider) external view returns (uint256) {
         return getInvestmentStorage(investmentId).ridersHirePurchaseRequests[rider];
     }
 
     /// @notice Returns the rider payment history of an investment.
     /// @param index The index into {investmentsList}.
     /// @return The {HPayingHistory} for the investment's rider.
-    function getInvestmentRiderPayinsHistory(uint256 index)
-    external
-    view
-    returns (HPayingHistory memory)
-    {
+    function getInvestmentRiderPayinsHistory(uint256 index) external view returns (HPayingHistory memory) {
         return investmentsList[index].riderPayinsHistory;
     }
 
     /// @notice Returns the rider savings record of an investment.
     /// @param index The index into {investmentsList}.
     /// @return The {HRiderSavingsHistory} for the investment's rider.
-    function getInvestmentRiderSavings(uint256 index)
-    external
-    view
-    returns (HRiderSavingsHistory memory)
-    {
+    function getInvestmentRiderSavings(uint256 index) external view returns (HRiderSavingsHistory memory) {
         return investmentsList[index].riderSavings;
     }
 
@@ -1122,9 +1101,9 @@ contract HHelper is Ownable {
     /// @param investor The investor address.
     /// @return The {HInvestorPayoutsHistory} for that investor.
     function getInvestorPayoutHistory(bytes32 investmentId, address investor)
-    external
-    view
-    returns (HInvestorPayoutsHistory memory)
+        external
+        view
+        returns (HInvestorPayoutsHistory memory)
     {
         return getInvestmentStorage(investmentId).investorPayoutHistory[investor];
     }
@@ -1132,22 +1111,14 @@ contract HHelper is Ownable {
     /// @notice Returns the aggregate payout history of an investment.
     /// @param index The index into {investmentsList}.
     /// @return The {HInvestmentPayoutsHistory} for the investment.
-    function getInvestmentPayoutHistory(uint256 index)
-    external
-    view
-    returns (HInvestmentPayoutsHistory memory)
-    {
+    function getInvestmentPayoutHistory(uint256 index) external view returns (HInvestmentPayoutsHistory memory) {
         return investmentsList[index].investmentPayoutHistory;
     }
 
     /// @notice Returns the contract/owner payout history recorded on an investment.
     /// @param index The index into {investmentsList}.
     /// @return The {HOwnerPayoutsHistory} for the investment.
-    function getInvestmentContractPayoutHistory(uint256 index)
-    external
-    view
-    returns (HOwnerPayoutsHistory memory)
-    {
+    function getInvestmentContractPayoutHistory(uint256 index) external view returns (HOwnerPayoutsHistory memory) {
         return investmentsList[index].contractPayoutHistory;
     }
 
@@ -1274,11 +1245,7 @@ contract HHelper is Ownable {
     /// @notice Returns a rider hire-purchase request at an index.
     /// @param index The index into {ridersHirePurchasesRequestsList}.
     /// @return The {HRiderHirePurchaseRequest} at the given index.
-    function getHireRequestAt(uint256 index)
-    external
-    view
-    returns (HRiderHirePurchaseRequest memory)
-    {
+    function getHireRequestAt(uint256 index) external view returns (HRiderHirePurchaseRequest memory) {
         return ridersHirePurchasesRequestsList[index];
     }
 
@@ -1286,11 +1253,7 @@ contract HHelper is Ownable {
     /// @param riderId The id of the rider.
     /// @param investmentId The id of the investment.
     /// @return A non-zero marker if the rider was rejected, otherwise zero.
-    function getRejectedRiderIndex(bytes32 riderId, bytes32 investmentId)
-    external
-    view
-    returns (uint256)
-    {
+    function getRejectedRiderIndex(bytes32 riderId, bytes32 investmentId) external view returns (uint256) {
         return rejectedRiders[riderId][investmentId];
     }
 
@@ -1324,7 +1287,7 @@ contract HHelper is Ownable {
     ///         Returns 0 when the caller is not the investment's hired rider or the rider has
     ///         already met the target total.
     /// @param investmentId The id of the investment.
-    /// @return The amount the caller should pay now, in USDC.
+    /// @return The amount the caller should pay now, in USDC base units (6 decimals).
     function getRiderAmountToPayNow(bytes32 investmentId) external view returns (uint256) {
         HInvestment storage investment = getInvestmentStorage(investmentId);
 
@@ -1364,11 +1327,7 @@ contract HHelper is Ownable {
     /// @param investor The investor address.
     /// @param investmentId The id of the investment.
     /// @return The index into {investorPayoutList}.
-    function getInvestorPayoutIndex(address investor, bytes32 investmentId)
-    external
-    view
-    returns (uint256)
-    {
+    function getInvestorPayoutIndex(address investor, bytes32 investmentId) external view returns (uint256) {
         return investorPayouts[investor][investmentId];
     }
 
@@ -1399,11 +1358,7 @@ contract HHelper is Ownable {
     /// @notice Returns the aggregate owner payout history for an investment.
     /// @param investmentId The id of the investment.
     /// @return The {HOwnerPayoutsHistory} for the investment.
-    function getOwnerPayoutHistory(bytes32 investmentId)
-    external
-    view
-    returns (HOwnerPayoutsHistory memory)
-    {
+    function getOwnerPayoutHistory(bytes32 investmentId) external view returns (HOwnerPayoutsHistory memory) {
         return ownerPayoutHistory[investmentId];
     }
 

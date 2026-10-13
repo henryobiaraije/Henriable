@@ -3,67 +3,70 @@ pragma solidity ^0.8.13;
 
 //<editor-fold desc="Imports">
 
-
-
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {
-HAsset,
-HAssetAlreadyExists,
-HAssetHasNonPendingInvestments,
-HAssetInvalidCostPrice,
-HAssetInvalidId,
-HAssetInvalidName,
-HAssetInvalidSellPrice,
-HAssetInvalidSettings,
-HAssetNotActive,
-HInvestment,
-HInvestmentAlreadyComplete,
-HInvestmentAlreadyExists,
-HInvestmentHasInvestors,
-HInvestmentInvalidAmount,
-HInvestmentInvalidEndTime,
-HInvestmentInvalidId,
-HInvestmentInvalidMinimumRiderPeriodicPayings,
-HInvestmentInvalidPeriodicRiderPayingInMinutes,
-HInvestmentInvalidRiderInitialBuyin,
-HInvestmentInvalidSettings,
-HInvestmentInvalidStartTime,
-HInvestmentNoOpenSlot,
-HInvestmentNotAccepting,
-HInvestmentNotAcceptingRiders,
-HInvestmentNotActive,
-HInvestmentNotDone,
-HInvestmentNotHired,
-HInvestmentNotPending,
-HInvestmentStatus,
-HInvestmentType,
-HInvestor,
-HInvestorInvalidAge,
-HOwner2IsOwner1,
-HPayingHistory,
-HRiderAlreadyRegistered,
-HRiderHirePurchaseRequest,
-HRiderInsufficientInitialBuyin,
-HRiderInvalidAge,
-HRiderInvalidCountry,
-HRiderInvalidName,
-HRiderNotHired,
-HRiderPayin,
-HRiderPayinBelowMinimum,
-HRiderPayinLate,
-HRiderPaymentsCompleted,
-HRiderPaymentsNotCompleted,
-HSharingBreakdown,
-HStats
+    HAsset,
+    HAssetAlreadyExists,
+    HAssetHasNonPendingInvestments,
+    HAssetInvalidCostPrice,
+    HAssetInvalidId,
+    HAssetInvalidName,
+    HAssetInvalidSellPrice,
+    HAssetInvalidSettings,
+    HAssetNotActive,
+    HInvestment,
+    HInvestmentAlreadyComplete,
+    HInvestmentAlreadyExists,
+    HInvestmentHasInvestors,
+    HInvestmentInvalidAmount,
+    HInvestmentInvalidEndTime,
+    HInvestmentInvalidId,
+    HInvestmentInvalidMinimumRiderPeriodicPayings,
+    HInvestmentInvalidPeriodicRiderPayingInMinutes,
+    HInvestmentInvalidRiderInitialBuyin,
+    HInvestmentInvalidSettings,
+    HInvestmentInvalidStartTime,
+    HInvestmentNoOpenSlot,
+    HInvestmentNotAccepting,
+    HInvestmentNotAcceptingRiders,
+    HInvestmentNotActive,
+    HInvestmentNotDone,
+    HInvestmentNotHired,
+    HInvestmentNotPending,
+    HInvestmentStatus,
+    HInvestmentType,
+    HInvestor,
+    HInvestorInvalidAge,
+    HOwner2IsOwner1,
+    HPayingHistory,
+    HRiderAlreadyRegistered,
+    HRiderHirePurchaseRequest,
+    HRiderInsufficientInitialBuyin,
+    HRiderInvalidAge,
+    HRiderInvalidCountry,
+    HRiderInvalidName,
+    HRiderNotHired,
+    HRiderPayin,
+    HRiderPayinBelowMinimum,
+    HRiderPayinLate,
+    HRiderPaymentsCompleted,
+    HRiderPaymentsNotCompleted,
+    HSharingBreakdown,
+    HStats
 } from "./types/common.sol";
 import {HHelper} from "./helpers/HHelper.sol";
+
 //</editor-fold desc="Imports">
 
 /// @title The Henriable contract.
 /// @author Obiaraije Henry
+/// @dev All USD amounts are expressed as integers in USDC base units (6 decimals), i.e.
+///      micro-USDC, where 1 USDC == USDC_UNIT == 10 ** 6 base units (e.g. $14 ==
+///      14_000_000 and $0.14 == 140_000). The contract never converts or scales; it moves
+///      the raw base-unit value. Callers must therefore pass base units: the frontend uses
+///      viem's `parseUnits(x, 6)`, not a whole-dollar number.
 contract Henriable is HHelper {
-
     // Provides safeTransferFrom, which reverts on failure.
     using SafeERC20 for IERC20;
 
@@ -72,9 +75,8 @@ contract Henriable is HHelper {
     /// @notice Deploys Henriable, setting the contract owner and the USDC token.
     /// @param initialOwner The address that will own the contract.
     /// @param ownerUsdToken_ The USDC token used for investments, payouts and payments.
-    constructor(address initialOwner, IERC20 ownerUsdToken_)
-    HHelper(initialOwner, ownerUsdToken_)
-    {}
+    constructor(address initialOwner, IERC20 ownerUsdToken_) HHelper(initialOwner, ownerUsdToken_) {}
+
     //</editor-fold desc="Constructor">
 
     //<editor-fold desc="Actions">
@@ -106,7 +108,6 @@ contract Henriable is HHelper {
     ///        non-zero, `name` non-empty, and `costPrice`/`sellPrice` non-zero. The
     ///        `active` field is ignored and set to true.
     function actionAdminAddAsset(HAsset calldata _asset) external onlyOwners {
-
         //<editor-fold desc="Verify Parameters">
 
         // The id is the registry key, so it must be provided.
@@ -215,9 +216,11 @@ contract Henriable is HHelper {
     ///         States updated: {investmentsList}, {investments}, {assetInvestments}.
     /// @param _investmentId Unique, non-zero id of the new investment slot.
     /// @param _assetId Id of the asset to invest in; must exist and be active.
-    /// @param _riderInitialBuyinUsd Initial rider buy-in, in USDC; must be non-zero.
+    /// @param _riderInitialBuyinUsd Initial rider buy-in, in USDC base units (6 decimals);
+    ///        must be non-zero. Callers pass base units (frontend: `parseUnits(x, 6)`).
     /// @param _periodicRiderPayingInMinutes Length of a rider period, in minutes; must be non-zero.
-    /// @param _minimumRiderPeriodicPayingsUsd Minimum rider payment per period, in USDC; must be non-zero.
+    /// @param _minimumRiderPeriodicPayingsUsd Minimum rider payment per period, in USDC base
+    ///        units (6 decimals); must be non-zero. Callers pass base units.
     function actionAdminAddInvestment(
         bytes32 _investmentId,
         bytes32 _assetId,
@@ -225,7 +228,6 @@ contract Henriable is HHelper {
         uint256 _periodicRiderPayingInMinutes,
         uint256 _minimumRiderPeriodicPayingsUsd
     ) external onlyOwners {
-
         //<editor-fold desc="Verify Parameters">
 
         // The id is the registry key, so it must be provided.
@@ -336,8 +338,8 @@ contract Henriable is HHelper {
     /// @param _startTime Timestamp at which the next investment round starts; must be in the future.
     /// @param _endTime Timestamp at which the next investment round ends; must be after _startTime.
     function actionAdminSetNextInvestmentTimes(bytes32 _investmentId, uint256 _startTime, uint256 _endTime)
-    external
-    onlyOwners
+        external
+        onlyOwners
     {
         // Get the modifiable investment (reverts if it is not registered).
         HInvestment storage investment = getInvestmentStorage(_investmentId);
@@ -410,7 +412,9 @@ contract Henriable is HHelper {
     /// @param _investor The investor profile (name, country, age) to create or update.
     /// @param _investmentType The tier to invest in (Senior or Junior).
     /// @param _investmentId The id of the investment to invest in.
-    /// @param _approvedUSDAmount The USDC amount approved for this slot; must equal the slot amount.
+    /// @param _approvedUSDAmount The USDC amount approved for this slot, in USDC base units
+    ///        (6 decimals); must equal the slot amount. Callers pass base units (frontend:
+    ///        `parseUnits(x, 6)`).
     function actionInvest(
         HInvestor calldata _investor,
         HInvestmentType _investmentType,
@@ -447,13 +451,11 @@ contract Henriable is HHelper {
         HAsset storage asset = getAssetStorage(investment.assetId);
 
         // Select the tier being invested in.
-        mapping(address => uint256) storage theInvestors = _investmentType == HInvestmentType.Senior
-            ? investment.seniorInvestors
-            : investment.juniorInvestors;
+        mapping(address => uint256) storage theInvestors =
+            _investmentType == HInvestmentType.Senior ? investment.seniorInvestors : investment.juniorInvestors;
 
-        address[] storage theInvestorsList = _investmentType == HInvestmentType.Senior
-            ? investment.seniorInvestorsList
-            : investment.juniorInvestorsList;
+        address[] storage theInvestorsList =
+            _investmentType == HInvestmentType.Senior ? investment.seniorInvestorsList : investment.juniorInvestorsList;
 
         uint256 theInvestorBuyingPrice = _investmentType == HInvestmentType.Senior
             ? asset.oneSeniorInvestorBuyingPrice
@@ -499,7 +501,8 @@ contract Henriable is HHelper {
         // Let the status helper react (e.g. mark the opportunity done once full).
         maybeUpdateInvestmentStatus(_investmentId);
 
-        // Pull the USDC from the investor into the contract (reverts on failure).
+        // Pull the USDC (already in base units) from the investor into the contract
+        // (reverts on failure). No scaling is applied: requiredAmount is base units.
         ownerUsdToken.safeTransferFrom(msg.sender, address(this), requiredAmount);
     }
 
@@ -516,8 +519,8 @@ contract Henriable is HHelper {
     /// @param _startTime Timestamp at which the next hire-request round starts; must be in the future.
     /// @param _endTime Timestamp at which the next hire-request round ends; must be after _startTime.
     function actionSetNextHireRoundTime(bytes32 _investmentId, uint256 _startTime, uint256 _endTime)
-    external
-    onlyOwners
+        external
+        onlyOwners
     {
         // Get the modifiable investment (reverts if it is not registered).
         HInvestment storage investment = getInvestmentStorage(_investmentId);
@@ -583,7 +586,8 @@ contract Henriable is HHelper {
     /// @param _name The rider's name; must be non-zero.
     /// @param _country The rider's country; must be non-zero.
     /// @param _age The rider's age; must be at least 18.
-    /// @param _approvedInitialBuyin The USDC the rider approved; must cover the required buy-in.
+    /// @param _approvedInitialBuyin The USDC the rider approved, in USDC base units (6
+    ///        decimals); must cover the required buy-in. Callers pass base units.
     /// @param _investmentId The id of the investment to register for.
     function actionRiderRegisterAsARider(
         bytes32 _name,
@@ -647,11 +651,8 @@ contract Henriable is HHelper {
         upsertRider(msg.sender, _name, _country, _age);
 
         // Record the hire request globally and on the investment.
-        HRiderHirePurchaseRequest memory hireRequest = HRiderHirePurchaseRequest({
-            riderId: riderId,
-            investmentId: _investmentId,
-            timeRequested: block.timestamp
-        });
+        HRiderHirePurchaseRequest memory hireRequest =
+            HRiderHirePurchaseRequest({riderId: riderId, investmentId: _investmentId, timeRequested: block.timestamp});
 
         // Record the hire request globally and on the investment. Every stored position
         // is `index + 1` (0 = "not registered"); HHelper getters hide the conversion.
@@ -688,7 +689,9 @@ contract Henriable is HHelper {
     ///         {HInvestment.riderSavings}, {HInvestment.investmentPayoutHistory} and the
     ///         per-investor payout histories.
     /// @param _investmentId The id of the investment being paid.
-    /// @param _approvedUSD The USDC the rider is paying; must be at least the minimum plus the savings charge.
+    /// @param _approvedUSD The USDC the rider is paying, in USDC base units (6 decimals);
+    ///        must be at least the minimum plus the savings charge. Callers pass base units
+    ///        (frontend: `parseUnits(x, 6)`).
     function actionRiderPayin(bytes32 _investmentId, uint256 _approvedUSD) external {
         //<editor-fold desc="Get the Investment">
         // Get the investment (reverts if it is not registered).
@@ -893,8 +896,6 @@ contract Henriable is HHelper {
 
     //<editor-fold desc="Testnet test">
 
-
-
     /// @notice Maps an investment id => 1-based position in {ownerPayoutsList} of the
     ///         most recent owner payout for that investment.
     /// @dev    Key: investment id (bytes32). Value: `index + 1` into {ownerPayoutsList},
@@ -906,8 +907,7 @@ contract Henriable is HHelper {
     /// @param anyAmount Can be any amount.
     /// @dev Throws when num is < 5.
     /// @return Returns just another number.
-    function testSet(uint256 anyAmount) public returns (uint256){
-
+    function testSet(uint256 anyAmount) public returns (uint256) {
         if (anyAmount < 5) {
             revert HAssetInvalidId();
         }
@@ -919,7 +919,7 @@ contract Henriable is HHelper {
         return 34;
     }
 
-    function getSet() external view returns (uint256[] memory){
+    function getSet() external view returns (uint256[] memory) {
         return testStateList;
     }
 

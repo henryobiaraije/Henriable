@@ -15,7 +15,6 @@ import {MockUSDC} from "../src/mocks/MockUSDC.sol";
 ///         scripts (script/deploy.sh for Anvil, script/deploy-sepolia.sh for Sepolia)
 ///         set the environment variables and the RPC/verify flags.
 contract DeployScript is Script {
-
     //<editor-fold desc="Constants">
 
     /// @notice Mock USDC minted to the deployer on local deployments (1 billion USDC).

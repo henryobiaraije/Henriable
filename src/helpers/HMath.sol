@@ -5,7 +5,6 @@ pragma solidity ^0.8.13;
 /// @author Obiaraije Henry
 /// @notice Stateless numeric helpers shared across the Henriable contracts.
 library HMath {
-
     //<editor-fold desc="Min/Max">
 
     /// @notice Returns the smaller of two values.

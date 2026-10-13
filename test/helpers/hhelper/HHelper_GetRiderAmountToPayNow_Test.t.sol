@@ -3,20 +3,20 @@ pragma solidity ^0.8.13;
 
 import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {HAsset, HInvestment} from "../../../src/types/common.sol";
+import {HAsset, HInvestment, USDC_UNIT} from "../../../src/types/common.sol";
 import {HHelper} from "../../../src/helpers/HHelper.sol";
 
 /// @title Tests for {HHelper.getRiderAmountToPayNow}.
 /// @notice The getter reports the next instalment the calling rider owes: the periodic
 ///         minimum (capped by the outstanding balance on the final instalment) plus the
 ///         asset's per-period savings charge. It is 0 for non-riders and once the target
-///         total has been paid.
+///         total has been paid. Every USD amount is in USDC base units (6 decimals).
 contract HHelperGetRiderAmountToPayNowTest is Test, HHelper {
     bytes32 internal constant ASSET_ID = bytes32("keke-0001");
     bytes32 internal constant INVESTMENT_ID = bytes32("inv-0001");
     address internal constant RIDER = address(0xB0B);
-    uint256 internal constant MINIMUM_PAYMENT = 100;
-    uint256 internal constant SAVINGS_CHARGE = 2;
+    uint256 internal constant MINIMUM_PAYMENT = 100 * USDC_UNIT;
+    uint256 internal constant SAVINGS_CHARGE = 2 * USDC_UNIT;
 
     constructor() HHelper(address(this), IERC20(address(0))) {}
 
@@ -25,14 +25,14 @@ contract HHelperGetRiderAmountToPayNowTest is Test, HHelper {
             id: ASSET_ID,
             active: true,
             name: bytes32("Keke"),
-            costPrice: 1_000,
-            sellPrice: 1_200,
-            oneSeniorInvestorBuyingPrice: 100,
-            oneSeniorInvestorProfit: 5,
-            oneJuniorInvestorBuyingPrice: 25,
-            oneJuniorInvestorProfit: 5,
+            costPrice: 1_000 * USDC_UNIT,
+            sellPrice: 1_200 * USDC_UNIT,
+            oneSeniorInvestorBuyingPrice: 100 * USDC_UNIT,
+            oneSeniorInvestorProfit: 5 * USDC_UNIT,
+            oneJuniorInvestorBuyingPrice: 25 * USDC_UNIT,
+            oneJuniorInvestorProfit: 5 * USDC_UNIT,
             riderSlashableRepayableExtraCharge: SAVINGS_CHARGE,
-            ownerProfit: 75,
+            ownerProfit: 75 * USDC_UNIT,
             sharingPercentSeniorInvestor: 70,
             sharingPercentJuniorInvestor: 25,
             sharingPercentOwner: 5,
@@ -60,16 +60,16 @@ contract HHelperGetRiderAmountToPayNowTest is Test, HHelper {
     }
 
     function test_GetRiderAmountToPayNow_ReturnsRemainingPlusSavings_WhenBelowMinimum() public {
-        getInvestmentStorage(INVESTMENT_ID).riderPayinsHistory.totalAmountPaid = 1_150;
+        getInvestmentStorage(INVESTMENT_ID).riderPayinsHistory.totalAmountPaid = 1_150 * USDC_UNIT;
 
         vm.prank(RIDER);
         uint256 amount = this.getRiderAmountToPayNow(INVESTMENT_ID);
 
-        assertEq(amount, 50 + SAVINGS_CHARGE);
+        assertEq(amount, 50 * USDC_UNIT + SAVINGS_CHARGE);
     }
 
     function test_GetRiderAmountToPayNow_ReturnsZero_WhenPaymentsCompleted() public {
-        getInvestmentStorage(INVESTMENT_ID).riderPayinsHistory.totalAmountPaid = 1_200;
+        getInvestmentStorage(INVESTMENT_ID).riderPayinsHistory.totalAmountPaid = 1_200 * USDC_UNIT;
 
         vm.prank(RIDER);
         uint256 amount = this.getRiderAmountToPayNow(INVESTMENT_ID);

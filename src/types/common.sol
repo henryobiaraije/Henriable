@@ -1,8 +1,15 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.13;
 
-
 //<editor-fold desc="Constants">
+
+// Number of USDC base units (micro-USDC) in one whole USDC.
+// USDC has 6 decimals, so 1 USDC == USDC_UNIT base units (10 ** 6). Every USD amount in
+// this contract is an integer expressed in these base units; the contract never converts,
+// it only standardizes the unit. Examples: $14 == 14 * USDC_UNIT == 14_000_000,
+// $4 == 4_000_000 and $0.14 == 140_000. Callers must pass amounts as base-unit integers
+// (the frontend uses viem's parseUnits(x, 6)).
+uint256 constant USDC_UNIT = 10 ** 6;
 
 //</editor-fold desc="Constants">
 
@@ -29,39 +36,40 @@ struct HAsset {
     /// @notice Human-readable name of the asset (e.g. "Keke-0001-2026", "Bike-0001-2026").
     bytes32 name;
 
-    /// @notice Purchase/cost price of the asset, in USDC.
+    /// @notice Purchase/cost price of the asset, in USDC base units (6 decimals).
     /// @dev    The amount required to acquire one unit of the asset.
     uint256 costPrice;
 
-    /// @notice Total amount the rider would need to pay over the life of the hire purchase, in USDC.
+    /// @notice Total amount the rider would need to pay over the life of the hire purchase, in USDC base units (6 decimals).
     /// @dev    Must be large enough to cover the asset cost plus the profits
     ///         promised to both the senior and junior investor pools (except the fixed extra charge for rider slashable, refundable, savings).
     uint256 sellPrice;
 
-    /// @notice Buying price contributed by one senior investor, in USDC.
+    /// @notice Buying price contributed by one senior investor, in USDC base units (6 decimals).
     /// @dev    The senior pool total is this times {totalNumberOfSeniorInvestorsNeeded}.
     uint256 oneSeniorInvestorBuyingPrice;
 
-    /// @notice Profit one senior investor earns over time, in USDC.
+    /// @notice Profit one senior investor earns over time, in USDC base units (6 decimals).
     /// @dev    Senior investors are paid first and carry the lowest risk/reward.
     uint256 oneSeniorInvestorProfit;
 
-    /// @notice Buying price contributed by one junior investor, in USDC.
+    /// @notice Buying price contributed by one junior investor, in USDC base units (6 decimals).
     /// @dev    The junior pool total is this times {totalNumberOfJuniorInvestorsNeeded}.
     uint256 oneJuniorInvestorBuyingPrice;
 
-    /// @notice Profit one junior investor earns over time, in USDC.
+    /// @notice Profit one junior investor earns over time, in USDC base units (6 decimals).
     /// @dev    Junior investors are paid after senior investors and carry the
     ///         higher risk/reward.
     uint256 oneJuniorInvestorProfit;
 
-    /// @notice At every paying, this amount is charged extra from the rider and saved for the rider.
+    /// @notice At every paying, this amount is charged extra from the rider and saved for the rider,
+    ///         in USDC base units (6 decimals).
     ///         Then on the day of ownership transfer, its refunded to the rider.
     ///         This would help with repairs and reward for their faithfulness through the process.
     ///         If they default, these savings could be slashed as penalty and to fund investor payouts.
     uint256 riderSlashableRepayableExtraCharge;
 
-    /// @notice Profit owner will earn over time.
+    /// @notice Profit owner will earn over time, in USDC base units (6 decimals).
     uint256 ownerProfit;
 
     /// @notice Share of each rider payment (in percent) credited equally to the senior
@@ -107,13 +115,13 @@ struct HInvestment {
     /// @notice Identifier of the {HAsset} this opportunity invests in.
     bytes32 assetId;
 
-    /// @notice Initial buy-in a rider must pay to start the hire purchase, in USDC.
+    /// @notice Initial buy-in a rider must pay to start the hire purchase, in USDC base units (6 decimals).
     uint256 riderInitialBuyinUsd;
 
     /// @notice Length of each rider payment period, in minutes.
     uint256 periodicRiderPayingInMinutes;
 
-    /// @notice Minimum amount a rider must pay per period, in USDC.
+    /// @notice Minimum amount a rider must pay per period, in USDC base units (6 decimals).
     uint256 minimumRiderPeriodicPayingsUsd;
 
     //</editor-fold desc="Fields: Admin Supplied">
@@ -202,7 +210,6 @@ struct HInvestment {
 
     /// @notice Timestamp at which the NFT title was transferred to the rider.
     uint256 timeNftTransferedToRider;
-
     //</editor-fold desc="Fields: Contract Filled">
 }
 
@@ -261,7 +268,7 @@ struct HRiderPayin {
     /// @notice Identifier of the investment the payment is for.
     bytes32 investmentId;
 
-    /// @notice Amount paid in this instalment, in USDC.
+    /// @notice Amount paid in this instalment, in USDC base units (6 decimals).
     uint256 amountPaid;
 
     /// @notice Timestamp at which the payment was made.
@@ -276,13 +283,13 @@ struct HRiderPayin {
 /// @dev    Returned by the sharing calculator; the caller credits each party. The rider's
 ///         refundable savings charge is collected separately and is not part of this split.
 struct HSharingBreakdown {
-    /// @notice Amount credited to the contract owner, in USDC.
+    /// @notice Amount credited to the contract owner, in USDC base units (6 decimals).
     uint256 ownerAmount;
 
-    /// @notice Total amount credited to the senior investor pool, in USDC.
+    /// @notice Total amount credited to the senior investor pool, in USDC base units (6 decimals).
     uint256 seniorInvestorsAmount;
 
-    /// @notice Total amount credited to the junior investor pool, in USDC.
+    /// @notice Total amount credited to the junior investor pool, in USDC base units (6 decimals).
     uint256 juniorInvestorsAmount;
 }
 
@@ -294,7 +301,7 @@ struct HPayingHistory {
     /// @notice Address of the rider.
     address riderAddress;
 
-    /// @notice Total amount the rider has paid so far, in USDC.
+    /// @notice Total amount the rider has paid so far, in USDC base units (6 decimals).
     uint256 totalAmountPaid;
 
     /// @notice Total number of payments the rider has made.
@@ -307,7 +314,7 @@ struct HOwnerPayout {
     /// @notice Identifier of the investment the payout came from.
     bytes32 investmentId;
 
-    /// @notice Amount paid out, in USDC.
+    /// @notice Amount paid out, in USDC base units (6 decimals).
     uint256 amountPaid;
 
     /// @notice Timestamp at which the payout was made.
@@ -320,7 +327,7 @@ struct HOwnerPayout {
 /// @title HOwnerPayoutsHistory
 /// @notice Aggregate record of payouts made to the contract/owner.
 struct HOwnerPayoutsHistory {
-    /// @notice Total amount paid out so far, in USDC.
+    /// @notice Total amount paid out so far, in USDC base units (6 decimals).
     uint256 totalAmountPaid;
 
     /// @notice Total number of payouts made.
@@ -333,7 +340,7 @@ struct HInvestorPayout {
     /// @notice Identifier of the investment the payout came from.
     bytes32 investmentId;
 
-    /// @notice Amount paid out, in USDC.
+    /// @notice Amount paid out, in USDC base units (6 decimals).
     uint256 amountPaid;
 
     /// @notice Timestamp at which the payout was made.
@@ -352,13 +359,13 @@ struct HInvestorPayoutsHistory {
     /// @notice Identifier of the investment.
     bytes32 investmentId;
 
-    /// @notice Total amount paid to the investor so far, in USDC.
+    /// @notice Total amount paid to the investor so far, in USDC base units (6 decimals).
     uint256 totalAmountPaid;
 
     /// @notice Total number of payouts made to the investor.
     uint256 totalNumberOfTimesPaid;
 
-    /// @notice Total amount the investor is due to receive over time, in USDC.
+    /// @notice Total amount the investor is due to receive over time, in USDC base units (6 decimals).
     uint256 targetTotalPay;
 }
 
@@ -368,13 +375,13 @@ struct HInvestmentPayoutsHistory {
     /// @notice Identifier of the investment.
     bytes32 investmentId;
 
-    /// @notice Total amount paid out so far on the investment, in USDC.
+    /// @notice Total amount paid out so far on the investment, in USDC base units (6 decimals).
     uint256 totalAmountPaid;
 
     /// @notice Total number of payouts made on the investment.
     uint256 totalNumberOfTimesPaid;
 
-    /// @notice Total amount due to be paid out on the investment, in USDC.
+    /// @notice Total amount due to be paid out on the investment, in USDC base units (6 decimals).
     uint256 targetTotalPay;
 }
 
@@ -388,7 +395,7 @@ struct HRiderSavingsHistory {
     /// @notice Address of the rider.
     address riderAddress;
 
-    /// @notice Total amount saved so far, in USDC.
+    /// @notice Total amount saved so far, in USDC base units (6 decimals).
     uint256 totalAmountSaved;
 
     /// @notice Individual savings entries.
@@ -401,7 +408,7 @@ struct HRiderSavings {
     /// @notice Address of the rider.
     address riderAddress;
 
-    /// @notice Amount saved in this entry, in USDC.
+    /// @notice Amount saved in this entry, in USDC base units (6 decimals).
     uint256 amountSaved;
 
     /// @notice Timestamp at which the amount was saved.
@@ -469,27 +476,27 @@ struct HStats {
 
     //<editor-fold desc="Fields: Amounts">
 
-    /// @notice Gross USDC senior investors have invested so far.
+    /// @notice Gross amount senior investors have invested so far, in USDC base units (6 decimals).
     uint256 totalSeniorInvestedUsd;
 
-    /// @notice Gross USDC junior investors have invested so far.
+    /// @notice Gross amount junior investors have invested so far, in USDC base units (6 decimals).
     uint256 totalJuniorInvestedUsd;
 
-    /// @notice Gross USDC riders have paid in, including refundable savings charges.
+    /// @notice Gross amount riders have paid in, including refundable savings charges,
+    ///         in USDC base units (6 decimals).
     uint256 totalPayinsUsd;
 
-    /// @notice Cumulative USDC paid out to senior investors.
+    /// @notice Cumulative amount paid out to senior investors, in USDC base units (6 decimals).
     uint256 totalSeniorPayoutsUsd;
 
-    /// @notice Cumulative USDC paid out to junior investors.
+    /// @notice Cumulative amount paid out to junior investors, in USDC base units (6 decimals).
     uint256 totalJuniorPayoutsUsd;
 
-    /// @notice Cumulative USDC paid out to the owner.
+    /// @notice Cumulative amount paid out to the owner, in USDC base units (6 decimals).
     uint256 totalOwnerPayoutsUsd;
 
-    /// @notice USDC currently held as refundable rider savings.
+    /// @notice Amount currently held as refundable rider savings, in USDC base units (6 decimals).
     uint256 riderSavingsHeldUsd;
-
     //</editor-fold desc="Fields: Amounts">
 }
 
@@ -522,7 +529,6 @@ enum HInvestmentStatus {
     /// @notice Rider finished paying and the NFT title has been transferred.
     Complete
 }
-
 
 //</editor-fold desc="Enums">
 
@@ -699,7 +705,4 @@ error HRiderPayinLate(bytes32 id);
 //<editor-fold desc="Helper Functions">
 
 //</editor-fold desc="Helper Functions">
-
-
-
 
