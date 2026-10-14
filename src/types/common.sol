@@ -668,6 +668,20 @@ error HRiderInsufficientInitialBuyin(uint256 provided, uint256 required);
 /// @param rider The rider address.
 error HRiderAlreadyRegistered(bytes32 investmentId, address rider);
 
+/// @notice Thrown when a rider is accepted for an investment that already has a hired rider.
+/// @param investmentId The investment id.
+error HInvestmentAlreadyHasHiredRider(bytes32 investmentId);
+
+/// @notice Thrown when accepting a rider who never applied to hire the investment.
+/// @param investmentId The investment id.
+/// @param rider The applicant address.
+error HRiderDidNotApplyForHire(bytes32 investmentId, address rider);
+
+/// @notice Thrown when accepting a rider who was already rejected for the investment.
+/// @param investmentId The investment id.
+/// @param rider The applicant address.
+error HRiderAlreadyRejectedForHire(bytes32 investmentId, address rider);
+
 /// @notice Thrown when an operation references a rider that is not registered.
 /// @param rider The unknown rider address.
 error HRiderDoesNotExist(address rider);

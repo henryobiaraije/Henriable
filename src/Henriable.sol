@@ -18,6 +18,7 @@ import {
     HInvestment,
     HInvestmentAlreadyComplete,
     HInvestmentAlreadyExists,
+    HInvestmentAlreadyHasHiredRider,
     HInvestmentHasInvestors,
     HInvestmentInvalidAmount,
     HInvestmentInvalidEndTime,
@@ -41,6 +42,9 @@ import {
     HOwner2IsOwner1,
     HPayingHistory,
     HRiderAlreadyRegistered,
+    HRiderAlreadyRejectedForHire,
+    HRiderDidNotApplyForHire,
+    HRiderDoesNotExist,
     HRiderHirePurchaseRequest,
     HRiderInsufficientInitialBuyin,
     HRiderInvalidAge,
@@ -677,6 +681,120 @@ contract Henriable is HHelper {
     }
 
     //</editor-fold desc="Action:Rider: Register as a rider">
+
+    //<editor-fold desc="Action:Admin:Rider: Accept rider">
+
+    /// @notice Accepts one applicant as the rider for a funded investment and rejects the rest.
+    /// @dev    Only an owner (admin: owner1 or owner2) may call this.
+    ///         The investment must still be {HInvestmentStatus.AcceptingRiders} and have no
+    ///         hired rider yet; the chosen rider must exist, must have applied for the
+    ///         investment (recorded by {actionRiderRegisterAsARider}) and must not have been
+    ///         rejected before. Every other applicant is marked rejected via {rejectedRiders}
+    ///         and has their initial buy-in refunded, while the accepted rider's buy-in stays
+    ///         in the contract. The investment then moves to {HInvestmentStatus.Hired} and
+    ///         the rider's next payment date is set one period from now.
+    ///         States updated: {HInvestment.riderWhoHiredIt}, {HInvestment.riderNextPayinDate},
+    ///         {HInvestment.status}, {rejectedRiders}.
+    /// @param _investmentId The id of the investment whose rider is being chosen.
+    /// @param _riderAddress The applicant to accept as the hired rider.
+    function actionAdminAcceptRider(bytes32 _investmentId, address _riderAddress) external onlyOwners {
+        // Let the status helper advance the opportunity if it is due.
+        maybeUpdateInvestmentStatus(_investmentId);
+
+        //<editor-fold desc="Get the Investment">
+
+        // Get the modifiable investment (reverts if it is not registered).
+        HInvestment storage investment = getInvestmentStorage(_investmentId);
+        //</editor-fold desc="Get the Investment">
+
+        //<editor-fold desc="Verify Params">
+
+        // The hire round must still be open.
+        {
+            HInvestmentStatus[] memory allowedStatuses = new HInvestmentStatus[](1);
+            allowedStatuses[0] = HInvestmentStatus.AcceptingRiders;
+
+            bool hireRoundNotOpen = !isInvestmentStatus(_investmentId, allowedStatuses);
+            if (hireRoundNotOpen) revert HInvestmentNotAcceptingRiders(_investmentId);
+        }
+
+        // Only one rider can be accepted per investment.
+        {
+            bool riderAlreadyHired = investment.riderWhoHiredIt != address(0);
+            if (riderAlreadyHired) revert HInvestmentAlreadyHasHiredRider(_investmentId);
+        }
+
+        // The accepted address must be a registered rider...
+        {
+            bool riderDoesNotExist = riders[_riderAddress] == 0;
+            if (riderDoesNotExist) revert HRiderDoesNotExist(_riderAddress);
+        }
+
+        // ...who actually applied for this investment...
+        {
+            bytes32 riderId = bytes32(uint256(uint160(_riderAddress)));
+            bool riderDidNotApply = ridersHireRequestPurchasesByInvestment[riderId][_investmentId] == 0;
+            if (riderDidNotApply) revert HRiderDidNotApplyForHire(_investmentId, _riderAddress);
+        }
+
+        // ...and has not already been rejected for it.
+        {
+            bytes32 riderId = bytes32(uint256(uint160(_riderAddress)));
+            bool riderAlreadyRejected = rejectedRiders[riderId][_investmentId] != 0;
+            if (riderAlreadyRejected) revert HRiderAlreadyRejectedForHire(_investmentId, _riderAddress);
+        }
+
+        //</editor-fold desc="Verify Params">
+
+        //<editor-fold desc="Accept the rider">
+
+        // Record the hired rider and start their payment clock one period from now.
+        investment.riderWhoHiredIt = _riderAddress;
+        investment.riderNextPayinDate = block.timestamp + (investment.periodicRiderPayingInMinutes * 60);
+
+        //</editor-fold desc="Accept the rider">
+
+        //<editor-fold desc="Reject and refund other applicants">
+
+        // Reject every other applicant and refund the initial buy-in each of them paid.
+        // The refund amount is the investment's initial buy-in, which is exactly what
+        // {actionRiderRegisterAsARider} pulled in from each applicant.
+        uint256 refundAmount = investment.riderInitialBuyinUsd;
+        for (uint256 i = 0; i < investment.ridersHirePurchaseRequestsList.length; i++) {
+            address applicant = address(uint160(uint256(getInvestmentHireRequestStorage(_investmentId, i).riderId)));
+
+            bool isAcceptedRider = applicant == _riderAddress;
+            if (isAcceptedRider) {
+                continue;
+            }
+
+            // Skip anyone already rejected so a rejection and its refund happen at most once.
+            bytes32 applicantId = bytes32(uint256(uint160(applicant)));
+            bool applicantAlreadyRejected = rejectedRiders[applicantId][_investmentId] != 0;
+            if (applicantAlreadyRejected) {
+                continue;
+            }
+
+            // Effects: mark rejected before moving any token.
+            rejectedRiders[applicantId][_investmentId] = 1;
+
+            // Interactions: refund this applicant's initial buy-in.
+            if (refundAmount != 0) {
+                ownerUsdToken.safeTransfer(applicant, refundAmount);
+            }
+        }
+
+        //</editor-fold desc="Reject and refund other applicants">
+
+        //<editor-fold desc="Mark the investment Hired">
+
+        // Move the investment to Hired so the accepted rider can start paying.
+        setInvestmentStatus(investment, HInvestmentStatus.Hired);
+
+        //</editor-fold desc="Mark the investment Hired">
+    }
+
+    //</editor-fold desc="Action:Admin:Rider: Accept rider">
 
     //<editor-fold desc="Action:Rider: Pay in">
 
