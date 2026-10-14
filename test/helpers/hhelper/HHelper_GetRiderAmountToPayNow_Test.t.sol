@@ -89,4 +89,30 @@ contract HHelperGetRiderAmountToPayNowTest is Test, HHelper {
         vm.expectRevert();
         this.getRiderAmountToPayNow(bytes32("missing"));
     }
+
+    /// @notice Reproduces the reported case with micro-USDC amounts: a $0.6594 periodic
+    ///         minimum plus the $0.14 savings charge yields $0.7994 (~$0.80), so the bare
+    ///         $0.66 minimum is deliberately not what the rider transfers.
+    function test_GetRiderAmountToPayNow_AddsSavingsCharge_ToMicroMinimum() public {
+        bytes32 microAssetId = bytes32("keke-micro");
+        HAsset memory microAsset = getAssetStorage(ASSET_ID);
+        microAsset.id = microAssetId;
+        microAsset.name = bytes32("Keke-Micro");
+        microAsset.riderSlashableRepayableExtraCharge = 140_000;
+        assetsList.push(microAsset);
+        assets[microAssetId] = assetsList.length;
+
+        bytes32 microInvestmentId = bytes32("inv-micro");
+        HInvestment storage microInvestment = investmentsList.push();
+        microInvestment.investmentId = microInvestmentId;
+        microInvestment.assetId = microAssetId;
+        microInvestment.minimumRiderPeriodicPayingsUsd = 659_400;
+        microInvestment.riderWhoHiredIt = RIDER;
+        investments[microInvestmentId] = investmentsList.length;
+
+        vm.prank(RIDER);
+        uint256 amount = this.getRiderAmountToPayNow(microInvestmentId);
+
+        assertEq(amount, 659_400 + 140_000);
+    }
 }

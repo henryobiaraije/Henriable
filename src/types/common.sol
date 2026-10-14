@@ -151,9 +151,9 @@ struct HInvestment {
     /// @notice Current lifecycle state of the investment.
     HInvestmentStatus status;
 
-    // ---------------------------------------------------------------------
-    // Scheduling
-    // ---------------------------------------------------------------------
+    //</editor-fold desc="Fields: Contract Filled">
+
+    //<editor-fold desc="Fields: Scheduling">
 
     /// @notice Timestamp at which the next investment round is allowed to start.
     uint256 timeNextInvestmentStart;
@@ -167,9 +167,9 @@ struct HInvestment {
     /// @notice Timestamp at which the next rider hire-request round ends.
     uint256 timeNextRiderHireRequestEnd;
 
-    // ---------------------------------------------------------------------
-    // Rider hire purchase
-    // ---------------------------------------------------------------------
+    //</editor-fold desc="Fields: Scheduling">
+
+    //<editor-fold desc="Fields: Rider Hire Purchase">
 
     /// @notice Indices (into the riders' request list) of hire requests for this investment.
     uint256[] ridersHirePurchaseRequestsList;
@@ -190,8 +190,23 @@ struct HInvestment {
     ///         stored as `index + 1`.
     uint256[] riderPayinIndexes;
 
+    //</editor-fold desc="Fields: Rider Hire Purchase">
+
+    //<editor-fold desc="Fields: Rider Savings">
+
     /// @notice Record of savings accumulated from the rider's payments (slashable).
     HRiderSavingsHistory riderSavings;
+
+    /// @notice Indices (into the global rider savings slashes list) of the slashes applied to
+    ///         this investment's rider savings, stored as `index + 1`.
+    uint256[] riderSavingsSlashes;
+
+    /// @notice Aggregate record of the savings slashed from this investment's rider.
+    HRiderSavingsSlashesHistory riderSavingsSlashesHistory;
+
+    //</editor-fold desc="Fields: Rider Savings">
+
+    //<editor-fold desc="Fields: Payouts">
 
     /// @notice Per-investor payout history for this investment.
     mapping(address => HInvestorPayoutsHistory) investorPayoutHistory;
@@ -202,6 +217,10 @@ struct HInvestment {
     /// @notice Payout history for the contract/owner on this investment.
     HOwnerPayoutsHistory contractPayoutHistory;
 
+    //</editor-fold desc="Fields: Payouts">
+
+    //<editor-fold desc="Fields: Completion">
+
     /// @notice Token id of the NFT title minted for the asset in this investment.
     uint256 nftTokenId;
 
@@ -210,7 +229,8 @@ struct HInvestment {
 
     /// @notice Timestamp at which the NFT title was transferred to the rider.
     uint256 timeNftTransferedToRider;
-    //</editor-fold desc="Fields: Contract Filled">
+
+    //</editor-fold desc="Fields: Completion">
 }
 
 /// @title HInvestor
@@ -322,6 +342,10 @@ struct HOwnerPayout {
 
     /// @notice Address the payout was transferred into.
     address addressPaidInto;
+
+    /// @notice What produced the payout ({HPayoutType.RiderPaying} or
+    ///         {HPayoutType.RiderSavingsSlash}).
+    HPayoutType payoutType;
 }
 
 /// @title HOwnerPayoutsHistory
@@ -348,6 +372,10 @@ struct HInvestorPayout {
 
     /// @notice Address the payout was transferred into.
     address addressPaidInto;
+
+    /// @notice What produced the payout ({HPayoutType.RiderPaying} or
+    ///         {HPayoutType.RiderSavingsSlash}).
+    HPayoutType payoutType;
 }
 
 /// @title HInvestorPayoutsHistory
@@ -413,6 +441,37 @@ struct HRiderSavings {
 
     /// @notice Timestamp at which the amount was saved.
     uint256 timeSaved;
+}
+
+/// @title HRiderSavingsSlash
+/// @notice A single slash applied to a rider's savings for one investment.
+/// @dev    The slash is split to the owner and investor pools by {HPayoutType.RiderSavingsSlash}
+///         payouts, and reduces the savings that would otherwise be refunded at completion.
+struct HRiderSavingsSlash {
+    /// @notice Identifier of the investment the rider was saving on.
+    bytes32 investmentId;
+
+    /// @notice Address of the rider whose savings were slashed.
+    address riderAddress;
+
+    /// @notice Amount slashed in this entry, in USDC base units (6 decimals).
+    uint256 amountSlashed;
+
+    /// @notice Timestamp at which the slash was applied.
+    uint256 timeSlashed;
+}
+
+/// @title HRiderSavingsSlashesHistory
+/// @notice Aggregate record of the savings slashed from a rider on one investment.
+struct HRiderSavingsSlashesHistory {
+    /// @notice Address of the rider.
+    address riderAddress;
+
+    /// @notice Total amount slashed so far, in USDC base units (6 decimals).
+    uint256 totalAmountSlashed;
+
+    /// @notice Total number of slashes applied.
+    uint256 totalNumberOfTimesSlashed;
 }
 
 /// @title HStats
@@ -497,6 +556,9 @@ struct HStats {
 
     /// @notice Amount currently held as refundable rider savings, in USDC base units (6 decimals).
     uint256 riderSavingsHeldUsd;
+
+    /// @notice Cumulative amount of rider savings slashed so far, in USDC base units (6 decimals).
+    uint256 totalRiderSavingsSlashedUsd;
     //</editor-fold desc="Fields: Amounts">
 }
 
@@ -528,6 +590,15 @@ enum HInvestmentStatus {
     Hired,
     /// @notice Rider finished paying and the NFT title has been transferred.
     Complete
+}
+
+/// @title HPayoutType
+/// @notice Identifies what produced a payout entry, so payouts can be told apart by source.
+enum HPayoutType {
+    /// @notice The payout was funded by a rider's periodic payment.
+    RiderPaying,
+    /// @notice The payout was funded by a slash of the rider's savings.
+    RiderSavingsSlash
 }
 
 //</editor-fold desc="Enums">
@@ -720,6 +791,11 @@ error HRiderPayinLate(bytes32 id);
 /// @param newTime The proposed new next-payment timestamp.
 /// @param currentTime The investment's current next-payment timestamp.
 error HInvestmentInvalidRiderNextPayinDate(uint256 newTime, uint256 currentTime);
+
+/// @notice Thrown when a savings slash exceeds the rider's currently saved amount.
+/// @param amountSlashed The requested slash, in USDC base units (6 decimals).
+/// @param totalSaved The rider's current saved amount, in USDC base units (6 decimals).
+error HRiderSavingsSlashExceedsSaved(uint256 amountSlashed, uint256 totalSaved);
 
 //</editor-fold desc="Errors">
 

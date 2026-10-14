@@ -15,11 +15,13 @@ import {
     HInvestmentStatus,
     HInvestor,
     HInvestorDoesNotExist,
+    HPayoutType,
     HRider,
     HRiderDoesNotExist,
     HRiderHirePurchaseRequest,
     HRiderPayin,
     HRiderSavings,
+    HRiderSavingsSlashExceedsSaved,
     HPayingHistory,
     HOwnerPayout,
     HOwnerPayoutsHistory,
@@ -27,6 +29,8 @@ import {
     HInvestorPayoutsHistory,
     HInvestmentPayoutsHistory,
     HRiderSavingsHistory,
+    HRiderSavingsSlash,
+    HRiderSavingsSlashesHistory,
     HSharingBreakdown,
     HStats
 } from "../types/common.sol";
@@ -156,6 +160,19 @@ contract HHelper is Ownable {
     HRiderPayin[] internal riderPayinsList;
 
     //</editor-fold desc="State: Riders">
+
+    //<editor-fold desc="State: Rider Savings Slashes">
+
+    /// @notice All rider savings slashes ever applied, in insertion order.
+    HRiderSavingsSlash[] internal riderSavingsSlashesList;
+
+    /// @notice Maps an investment id => 1-based position in {riderSavingsSlashesList} of the
+    ///         most recent slash for that investment.
+    /// @dev    Key: investment id (bytes32). Value: `index + 1` into
+    ///         {riderSavingsSlashesList}, so 0 means no slash has been recorded yet.
+    mapping(bytes32 => uint256) internal riderSavingsSlashesByInvestment;
+
+    //</editor-fold desc="State: Rider Savings Slashes">
 
     //<editor-fold desc="State: Stats">
 
@@ -561,10 +578,13 @@ contract HHelper is Ownable {
     /// @param investment The investment the payment belongs to (storage reference).
     /// @param investmentId The id of the investment.
     /// @param breakdown The owner/investor split of the payment.
+    /// @param payoutType What produced the payout ({HPayoutType.RiderPaying} or
+    ///        {HPayoutType.RiderSavingsSlash}); stored on every entry it creates.
     function recordDistribution(
         HInvestment storage investment,
         bytes32 investmentId,
-        HSharingBreakdown memory breakdown
+        HSharingBreakdown memory breakdown,
+        HPayoutType payoutType
     ) internal {
         // Owner accounting.
         if (breakdown.ownerAmount != 0) {
@@ -573,7 +593,8 @@ contract HHelper is Ownable {
                     investmentId: investmentId,
                     amountPaid: breakdown.ownerAmount,
                     timePaid: block.timestamp,
-                    addressPaidInto: owner()
+                    addressPaidInto: owner(),
+                    payoutType: payoutType
                 })
             );
             ownerPayouts[investmentId] = ownerPayoutsList.length;
@@ -584,8 +605,8 @@ contract HHelper is Ownable {
         }
 
         // Per-investor accounting for each tier.
-        recordTierPayouts(investment, investmentId, investment.seniorInvestorsList, breakdown.seniorInvestorsAmount);
-        recordTierPayouts(investment, investmentId, investment.juniorInvestorsList, breakdown.juniorInvestorsAmount);
+        recordTierPayouts(investment, investmentId, investment.seniorInvestorsList, breakdown.seniorInvestorsAmount, payoutType);
+        recordTierPayouts(investment, investmentId, investment.juniorInvestorsList, breakdown.juniorInvestorsAmount, payoutType);
 
         // Aggregate investment accounting.
         HInvestmentPayoutsHistory storage investmentHistory = investment.investmentPayoutHistory;
@@ -626,16 +647,80 @@ contract HHelper is Ownable {
             );
     }
 
+    /// @notice Records a slash of the rider's savings for an investment.
+    /// @dev    Reduces the rider's refundable savings, appends a global slash entry, links it
+    ///         to the investment, and updates the investment and platform slash totals. Writes
+    ///         state only: the caller splits and transfers the slashed amount separately, as
+    ///         those are part of the normal payout accounting.
+    /// @param investment The investment the slash belongs to (storage reference).
+    /// @param investmentId The id of the investment.
+    /// @param amount The amount to slash, in USDC base units (6 decimals).
+    function recordRiderSavingsSlash(HInvestment storage investment, bytes32 investmentId, uint256 amount) internal {
+        // Reduce the savings that would otherwise be refunded at completion.
+        investment.riderSavings.totalAmountSaved -= amount;
+        stats.riderSavingsHeldUsd -= amount;
+
+        // Append the global slash entry and link it to the investment, storing the 1-based
+        // position so 0 keeps meaning "none".
+        riderSavingsSlashesList.push(
+            HRiderSavingsSlash({
+                investmentId: investmentId,
+                riderAddress: investment.riderWhoHiredIt,
+                amountSlashed: amount,
+                timeSlashed: block.timestamp
+            })
+        );
+        uint256 indexPlusOne = riderSavingsSlashesList.length;
+        investment.riderSavingsSlashes.push(indexPlusOne);
+        riderSavingsSlashesByInvestment[investmentId] = indexPlusOne;
+
+        // Per-investment aggregate.
+        HRiderSavingsSlashesHistory storage history = investment.riderSavingsSlashesHistory;
+        history.riderAddress = investment.riderWhoHiredIt;
+        history.totalAmountSlashed += amount;
+        history.totalNumberOfTimesSlashed += 1;
+
+        // Running platform total.
+        stats.totalRiderSavingsSlashedUsd += amount;
+    }
+
+    /// @notice Validates and applies a slash of the rider's savings for an investment.
+    /// @dev    Reverts when the slash exceeds the rider's saved amount. Reduces the savings,
+    ///         records the slash, then splits the amount to the owner and investor pools as
+    ///         {HPayoutType.RiderSavingsSlash} payouts and transfers them.
+    /// @param investment The investment the slash belongs to (storage reference).
+    /// @param investmentId The id of the investment.
+    /// @param amount The amount to slash, in USDC base units (6 decimals); must be non-zero.
+    function applyRiderSavingsSlash(HInvestment storage investment, bytes32 investmentId, uint256 amount) internal {
+        uint256 totalSaved = investment.riderSavings.totalAmountSaved;
+
+        bool slashExceedsSaved = amount > totalSaved;
+        if (slashExceedsSaved) revert HRiderSavingsSlashExceedsSaved(amount, totalSaved);
+
+        // Effects: reduce the rider's savings and record the slash before any transfer.
+        recordRiderSavingsSlash(investment, investmentId, amount);
+
+        // Split the slashed amount to the owner and investor pools, tagged as a slash.
+        HAsset storage asset = getAssetStorage(investment.assetId);
+        HSharingBreakdown memory breakdown = calcSharingFormula(investment, asset, amount);
+        recordDistribution(investment, investmentId, breakdown, HPayoutType.RiderSavingsSlash);
+
+        // Interactions: pay the shares out last.
+        transferDistribution(investment, breakdown);
+    }
+
     /// @notice Records an equal-share payout for every investor in a tier.
     /// @param investment The investment the payment belongs to (storage reference).
     /// @param investmentId The id of the investment.
     /// @param tierInvestors The tier's investor list.
     /// @param poolAmount The total amount to split across the tier, in USDC base units (6 decimals).
+    /// @param payoutType What produced the payout, stored on every entry it creates.
     function recordTierPayouts(
         HInvestment storage investment,
         bytes32 investmentId,
         address[] storage tierInvestors,
-        uint256 poolAmount
+        uint256 poolAmount,
+        HPayoutType payoutType
     ) internal {
         uint256 investorsCount = tierInvestors.length;
         if (investorsCount == 0 || poolAmount == 0) {
@@ -652,7 +737,8 @@ contract HHelper is Ownable {
                     investmentId: investmentId,
                     amountPaid: amountPerInvestor,
                     timePaid: block.timestamp,
-                    addressPaidInto: investor
+                    addressPaidInto: investor,
+                    payoutType: payoutType
                 })
             );
             investorPayouts[investor][investmentId] = investorPayoutList.length;
@@ -1308,6 +1394,48 @@ contract HHelper is Ownable {
 
     //</editor-fold desc="Rider Payin Getters">
 
+    //<editor-fold desc="Rider Savings Slash Getters">
+
+    /// @notice Returns the total number of rider savings slashes.
+    /// @return The length of {riderSavingsSlashesList}.
+    function getRiderSavingsSlashesCount() external view returns (uint256) {
+        return riderSavingsSlashesList.length;
+    }
+
+    /// @notice Returns a rider savings slash at an index.
+    /// @param index The index into {riderSavingsSlashesList}.
+    /// @return The {HRiderSavingsSlash} at the given index.
+    function getRiderSavingsSlashAt(uint256 index) external view returns (HRiderSavingsSlash memory) {
+        return riderSavingsSlashesList[index];
+    }
+
+    /// @notice Returns the most recent savings slash index for an investment.
+    /// @param investmentId The id of the investment.
+    /// @return The 1-based index into {riderSavingsSlashesList}, or 0 if none.
+    function getRiderSavingsSlashIndex(bytes32 investmentId) external view returns (uint256) {
+        return riderSavingsSlashesByInvestment[investmentId];
+    }
+
+    /// @notice Returns the savings slash indices recorded on an investment.
+    /// @param investmentId The id of the investment.
+    /// @return The 1-based indices into the global rider savings slashes list.
+    function getInvestmentRiderSavingsSlashes(bytes32 investmentId) external view returns (uint256[] memory) {
+        return getInvestmentStorage(investmentId).riderSavingsSlashes;
+    }
+
+    /// @notice Returns the aggregate savings slash history of an investment.
+    /// @param index The index into {investmentsList}.
+    /// @return The {HRiderSavingsSlashesHistory} for the investment.
+    function getInvestmentRiderSavingsSlashesHistory(uint256 index)
+        external
+        view
+        returns (HRiderSavingsSlashesHistory memory)
+    {
+        return investmentsList[index].riderSavingsSlashesHistory;
+    }
+
+    //</editor-fold desc="Rider Savings Slash Getters">
+
     //<editor-fold desc="Investor Payout Getters">
 
     /// @notice Returns the total number of investor payouts.
@@ -1442,6 +1570,14 @@ contract HHelper is Ownable {
     /// @return All entries of {ownerPayoutsList}.
     function getOwnerPayouts() external view returns (HOwnerPayout[] memory) {
         return ownerPayoutsList;
+    }
+
+    /// @notice Returns every rider savings slash ever applied.
+    /// @dev    Returns the whole list in one call; the paginated {getRiderSavingsSlashesCount} /
+    ///         {getRiderSavingsSlashAt} pair remains available for callers that page.
+    /// @return All entries of {riderSavingsSlashesList}.
+    function getRiderSavingsSlashes() external view returns (HRiderSavingsSlash[] memory) {
+        return riderSavingsSlashesList;
     }
 
     //</editor-fold desc="Whole-List Getters">

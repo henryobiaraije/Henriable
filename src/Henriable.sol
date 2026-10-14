@@ -42,6 +42,7 @@ import {
     HInvestorInvalidAge,
     HOwner2IsOwner1,
     HPayingHistory,
+    HPayoutType,
     HRiderAlreadyRegistered,
     HRiderAlreadyRejectedForHire,
     HRiderDidNotApplyForHire,
@@ -803,20 +804,29 @@ contract Henriable is HHelper {
 
     //<editor-fold desc="Action:Admin:Rider: Extend rider paying">
 
-    /// @notice Pushes the hired rider's next payment due date to a later time.
+    /// @notice Pushes the hired rider's next payment due date to a later time and optionally
+    ///         slashes an amount from the rider's accumulated savings.
     /// @dev    Only an owner (admin: owner1 or owner2) may call this.
     ///         The opportunity must be {HInvestmentStatus.Hired}, i.e. a rider is
     ///         currently paying, and the new date must be later than the current
     ///         next-payment date. Extending the date gives the rider more time before
     ///         {actionRiderPayin} treats their next payment as late.
-    ///         States updated: {HInvestment.riderNextPayinDate}.
+    ///         When `_slashAmount` is non-zero it must not exceed the rider's saved amount;
+    ///         the savings are reduced by it and the amount is split to the owner and
+    ///         investor pools exactly like a rider payment, recorded as
+    ///         {HPayoutType.RiderSavingsSlash} payouts and tracked via {HRiderSavingsSlash}.
+    ///         States updated: {HInvestment.riderNextPayinDate}, {HInvestment.riderSavings},
+    ///         {riderSavingsSlashesList}, and the investment's slash and payout histories.
     /// @param _investmentId The id of the investment whose rider payment is extended.
     /// @param _newNextPayinDate The new timestamp at which the rider's next payment is due;
     ///        must be later than the investment's current next-payment date.
-    function actionAdminExtendRiderPayingForInvestment(bytes32 _investmentId, uint256 _newNextPayinDate)
-        external
-        onlyOwners
-    {
+    /// @param _slashAmount Amount to slash from the rider's savings, in USDC base units
+    ///        (6 decimals); 0 extends without slashing. Callers pass base units.
+    function actionAdminExtendRiderPayingForInvestment(
+        bytes32 _investmentId,
+        uint256 _newNextPayinDate,
+        uint256 _slashAmount
+    ) external onlyOwners {
         // Get the modifiable investment (reverts if it is not registered).
         HInvestment storage investment = getInvestmentStorage(_investmentId);
 
@@ -835,6 +845,12 @@ contract Henriable is HHelper {
 
         // Apply the extended next-payment date.
         investment.riderNextPayinDate = _newNextPayinDate;
+
+        // Optionally slash the rider's savings; zero means "extend only".
+        bool slashRequested = _slashAmount != 0;
+        if (slashRequested) {
+            applyRiderSavingsSlash(investment, _investmentId, _slashAmount);
+        }
     }
 
     //</editor-fold desc="Action:Admin:Rider: Extend rider paying">
@@ -945,7 +961,7 @@ contract Henriable is HHelper {
 
         // Split the hire-purchase portion and record the owner/investor shares.
         HSharingBreakdown memory breakdown = calcSharingFormula(investment, asset, hirePurchaseAmount);
-        recordDistribution(investment, _investmentId, breakdown);
+        recordDistribution(investment, _investmentId, breakdown, HPayoutType.RiderPaying);
 
         // Set the rider's per-period savings aside (refunded on completion, slashable on default).
         recordRiderSavings(investment, riderSavingsAmount);

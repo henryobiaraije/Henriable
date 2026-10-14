@@ -11,6 +11,11 @@ import {
     HInvestmentStatus,
     HInvestmentType,
     HInvestor,
+    HInvestorPayout,
+    HOwnerPayout,
+    HPayoutType,
+    HRiderSavingsSlash,
+    HRiderSavingsSlashExceedsSaved,
     USDC_UNIT
 } from "../../src/types/common.sol";
 import {Henriable} from "../../src/Henriable.sol";
@@ -104,13 +109,20 @@ contract HenriableActionAdminExtendRiderPayingForInvestmentTest is Test {
         (, nextPayinDate, , , ) = henriable.getInvestmentRiderInfo(0);
     }
 
+    /// @dev The asset's per-period savings charge is 2 USDC, so one minimum payment (10 USDC
+    ///      + 2 USDC savings) leaves the rider with 2 USDC of refundable savings to slash.
+    function _makeRiderPayin() internal {
+        vm.prank(RIDER);
+        henriable.actionRiderPayin(INVESTMENT_ID, 12 * USDC_UNIT);
+    }
+
     //<editor-fold desc="Happy path">
 
     function test_ActionAdminExtendRiderPayingForInvestment_ExtendsNextPayinDate_WhenHired() public {
         uint256 currentPayinDate = _nextPayinDate();
         uint256 newPayinDate = currentPayinDate + 2 days;
 
-        henriable.actionAdminExtendRiderPayingForInvestment(INVESTMENT_ID, newPayinDate);
+        henriable.actionAdminExtendRiderPayingForInvestment(INVESTMENT_ID, newPayinDate, 0);
 
         assertEq(_nextPayinDate(), newPayinDate);
     }
@@ -120,7 +132,7 @@ contract HenriableActionAdminExtendRiderPayingForInvestmentTest is Test {
         uint256 newPayinDate = _nextPayinDate() + 1 days;
 
         vm.prank(OWNER_2);
-        henriable.actionAdminExtendRiderPayingForInvestment(INVESTMENT_ID, newPayinDate);
+        henriable.actionAdminExtendRiderPayingForInvestment(INVESTMENT_ID, newPayinDate, 0);
 
         assertEq(_nextPayinDate(), newPayinDate);
     }
@@ -134,7 +146,7 @@ contract HenriableActionAdminExtendRiderPayingForInvestmentTest is Test {
 
         vm.prank(NON_OWNER);
         vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, NON_OWNER));
-        henriable.actionAdminExtendRiderPayingForInvestment(INVESTMENT_ID, newPayinDate);
+        henriable.actionAdminExtendRiderPayingForInvestment(INVESTMENT_ID, newPayinDate, 0);
     }
 
     function test_ActionAdminExtendRiderPayingForInvestment_Reverts_WhenInvestmentNotHired() public {
@@ -142,7 +154,7 @@ contract HenriableActionAdminExtendRiderPayingForInvestmentTest is Test {
         henriable.actionAdminAddInvestment(unfundedInvestmentId, ASSET_ID, 50 * USDC_UNIT, 60, 10 * USDC_UNIT);
 
         vm.expectRevert(abi.encodeWithSelector(HInvestmentNotHired.selector, unfundedInvestmentId));
-        henriable.actionAdminExtendRiderPayingForInvestment(unfundedInvestmentId, block.timestamp + 1 days);
+        henriable.actionAdminExtendRiderPayingForInvestment(unfundedInvestmentId, block.timestamp + 1 days, 0);
     }
 
     function test_ActionAdminExtendRiderPayingForInvestment_Reverts_WhenNewDateNotLater() public {
@@ -153,7 +165,7 @@ contract HenriableActionAdminExtendRiderPayingForInvestmentTest is Test {
                 HInvestmentInvalidRiderNextPayinDate.selector, currentPayinDate, currentPayinDate
             )
         );
-        henriable.actionAdminExtendRiderPayingForInvestment(INVESTMENT_ID, currentPayinDate);
+        henriable.actionAdminExtendRiderPayingForInvestment(INVESTMENT_ID, currentPayinDate, 0);
     }
 
     function test_ActionAdminExtendRiderPayingForInvestment_Reverts_WhenNewDateEarlier() public {
@@ -165,8 +177,102 @@ contract HenriableActionAdminExtendRiderPayingForInvestmentTest is Test {
                 HInvestmentInvalidRiderNextPayinDate.selector, earlierPayinDate, currentPayinDate
             )
         );
-        henriable.actionAdminExtendRiderPayingForInvestment(INVESTMENT_ID, earlierPayinDate);
+        henriable.actionAdminExtendRiderPayingForInvestment(INVESTMENT_ID, earlierPayinDate, 0);
     }
 
     //</editor-fold desc="Reverts">
+
+    //<editor-fold desc="Slash">
+
+    function test_ActionAdminExtendRiderPayingForInvestment_SlashesSavings_WhenSlashRequested() public {
+        _makeRiderPayin();
+        uint256 newPayinDate = _nextPayinDate() + 1 days;
+
+        henriable.actionAdminExtendRiderPayingForInvestment(INVESTMENT_ID, newPayinDate, 1 * USDC_UNIT);
+
+        // The slash reduces the refundable savings and is tracked in its own structures.
+        assertEq(henriable.getInvestmentRiderSavings(0).totalAmountSaved, 1 * USDC_UNIT);
+        assertEq(henriable.getStats().totalRiderSavingsSlashedUsd, 1 * USDC_UNIT);
+        assertEq(henriable.getRiderSavingsSlashesCount(), 1);
+        assertEq(henriable.getRiderSavingsSlashes().length, 1);
+
+        HRiderSavingsSlash memory slash = henriable.getRiderSavingsSlashAt(0);
+        assertEq(slash.investmentId, INVESTMENT_ID);
+        assertEq(slash.riderAddress, RIDER);
+        assertEq(slash.amountSlashed, 1 * USDC_UNIT);
+
+        assertEq(henriable.getRiderSavingsSlashIndex(INVESTMENT_ID), 1);
+        assertEq(henriable.getInvestmentRiderSavingsSlashes(INVESTMENT_ID).length, 1);
+
+        assertEq(henriable.getInvestmentRiderSavingsSlashesHistory(0).totalAmountSlashed, 1 * USDC_UNIT);
+        assertEq(henriable.getInvestmentRiderSavingsSlashesHistory(0).totalNumberOfTimesSlashed, 1);
+
+        // The extended date is still applied.
+        assertEq(_nextPayinDate(), newPayinDate);
+    }
+
+    function test_ActionAdminExtendRiderPayingForInvestment_TagsSlashPayouts_AsRiderSavingsSlash() public {
+        _makeRiderPayin();
+
+        uint256 ownerPayoutsBefore = henriable.getOwnerPayoutsCount();
+        uint256 investorPayoutsBefore = henriable.getInvestorPayoutsCount();
+
+        henriable.actionAdminExtendRiderPayingForInvestment(INVESTMENT_ID, _nextPayinDate() + 1 days, 1 * USDC_UNIT);
+
+        // The slash pays out through the normal payout lists, tagged by type.
+        assertEq(henriable.getOwnerPayoutsCount(), ownerPayoutsBefore + 1);
+        HOwnerPayout memory ownerPayout = henriable.getOwnerPayoutAt(ownerPayoutsBefore);
+        assertEq(uint256(ownerPayout.payoutType), uint256(HPayoutType.RiderSavingsSlash));
+        assertEq(ownerPayout.amountPaid, 50_000);
+
+        assertEq(henriable.getInvestorPayoutsCount(), investorPayoutsBefore + 2);
+        HInvestorPayout memory seniorPayout = henriable.getInvestorPayoutAt(investorPayoutsBefore);
+        assertEq(uint256(seniorPayout.payoutType), uint256(HPayoutType.RiderSavingsSlash));
+        assertEq(seniorPayout.amountPaid, 700_000);
+
+        HInvestorPayout memory juniorPayout = henriable.getInvestorPayoutAt(investorPayoutsBefore + 1);
+        assertEq(uint256(juniorPayout.payoutType), uint256(HPayoutType.RiderSavingsSlash));
+        assertEq(juniorPayout.amountPaid, 250_000);
+    }
+
+    function test_ActionAdminExtendRiderPayingForInvestment_PaysSlashToInvestorsAndOwner() public {
+        _makeRiderPayin();
+
+        uint256 seniorBalanceBefore = usdc.balanceOf(SENIOR);
+        uint256 juniorBalanceBefore = usdc.balanceOf(JUNIOR);
+        uint256 ownerBalanceBefore = usdc.balanceOf(address(this));
+
+        henriable.actionAdminExtendRiderPayingForInvestment(INVESTMENT_ID, _nextPayinDate() + 1 days, 1 * USDC_UNIT);
+
+        assertEq(usdc.balanceOf(SENIOR) - seniorBalanceBefore, 700_000);
+        assertEq(usdc.balanceOf(JUNIOR) - juniorBalanceBefore, 250_000);
+        assertEq(usdc.balanceOf(address(this)) - ownerBalanceBefore, 50_000);
+    }
+
+    function test_ActionAdminExtendRiderPayingForInvestment_ExtendsWithoutSlash_WhenSlashIsZero() public {
+        _makeRiderPayin();
+        uint256 newPayinDate = _nextPayinDate() + 1 days;
+
+        henriable.actionAdminExtendRiderPayingForInvestment(INVESTMENT_ID, newPayinDate, 0);
+
+        assertEq(henriable.getInvestmentRiderSavings(0).totalAmountSaved, 2 * USDC_UNIT);
+        assertEq(henriable.getStats().totalRiderSavingsSlashedUsd, 0);
+        assertEq(henriable.getRiderSavingsSlashesCount(), 0);
+        assertEq(_nextPayinDate(), newPayinDate);
+    }
+
+    function test_ActionAdminExtendRiderPayingForInvestment_Reverts_WhenSlashExceedsSaved() public {
+        _makeRiderPayin();
+        uint256 newPayinDate = _nextPayinDate() + 1 days;
+
+        vm.expectRevert(
+            abi.encodeWithSelector(HRiderSavingsSlashExceedsSaved.selector, 3 * USDC_UNIT, 2 * USDC_UNIT)
+        );
+        henriable.actionAdminExtendRiderPayingForInvestment(INVESTMENT_ID, newPayinDate, 3 * USDC_UNIT);
+
+        assertEq(henriable.getRiderSavingsSlashesCount(), 0);
+        assertEq(henriable.getInvestmentRiderSavings(0).totalAmountSaved, 2 * USDC_UNIT);
+    }
+
+    //</editor-fold desc="Slash">
 }
