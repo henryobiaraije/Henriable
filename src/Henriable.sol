@@ -519,8 +519,10 @@ contract Henriable is HHelper {
 
     /// @notice Sets the window during which riders may request to hire an investment's asset.
     /// @dev    Only an owner (admin: owner1 or owner2) may call this.
-    ///         The opportunity must be funded ({HInvestmentStatus.InvestmentDone}), and the
-    ///         window must be in the future with `_endTime` after `_startTime`.
+    ///         The opportunity must be funded ({HInvestmentStatus.InvestmentDone}) or, once a
+    ///         hire round is open, still accepting riders ({HInvestmentStatus.AcceptingRiders})
+    ///         so an in-progress round can be extended. The window must be in the future with
+    ///         `_endTime` after `_startTime`.
     ///         States updated: {investmentsList}.
     /// @param _investmentId The id of the investment to schedule.
     /// @param _startTime Timestamp at which the next hire-request round starts; must be in the future.
@@ -532,12 +534,14 @@ contract Henriable is HHelper {
         // Get the modifiable investment (reverts if it is not registered).
         HInvestment storage investment = getInvestmentStorage(_investmentId);
 
-        // Hire times may only be set once investing has finished.
-        HInvestmentStatus[] memory allowedStatuses = new HInvestmentStatus[](1);
+        // Hire times may be set once investing has finished, or while riders are still being
+        // accepted so an open hire round can be extended.
+        HInvestmentStatus[] memory allowedStatuses = new HInvestmentStatus[](2);
         allowedStatuses[0] = HInvestmentStatus.InvestmentDone;
+        allowedStatuses[1] = HInvestmentStatus.AcceptingRiders;
 
-        bool investmentNotDone = !isInvestmentStatus(_investmentId, allowedStatuses);
-        if (investmentNotDone) revert HInvestmentNotDone(_investmentId);
+        bool statusNotSettable = !isInvestmentStatus(_investmentId, allowedStatuses);
+        if (statusNotSettable) revert HInvestmentNotDone(_investmentId);
 
         // The round must start in the future...
         bool startTimeNotInFuture = _startTime <= block.timestamp;
