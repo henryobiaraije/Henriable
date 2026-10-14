@@ -716,6 +716,11 @@ error HRiderPayinBelowMinimum(uint256 provided, uint256 required);
 /// @param id The investment id.
 error HRiderPayinLate(bytes32 id);
 
+/// @notice Thrown when the hired rider's next payment date is not extended to a later time.
+/// @param newTime The proposed new next-payment timestamp.
+/// @param currentTime The investment's current next-payment timestamp.
+error HInvestmentInvalidRiderNextPayinDate(uint256 newTime, uint256 currentTime);
+
 //</editor-fold desc="Errors">
 
 //<editor-fold desc="Helper Functions">

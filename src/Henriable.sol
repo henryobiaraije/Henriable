@@ -26,6 +26,7 @@ import {
     HInvestmentInvalidMinimumRiderPeriodicPayings,
     HInvestmentInvalidPeriodicRiderPayingInMinutes,
     HInvestmentInvalidRiderInitialBuyin,
+    HInvestmentInvalidRiderNextPayinDate,
     HInvestmentInvalidSettings,
     HInvestmentInvalidStartTime,
     HInvestmentNoOpenSlot,
@@ -799,6 +800,44 @@ contract Henriable is HHelper {
     }
 
     //</editor-fold desc="Action:Admin:Rider: Accept rider">
+
+    //<editor-fold desc="Action:Admin:Rider: Extend rider paying">
+
+    /// @notice Pushes the hired rider's next payment due date to a later time.
+    /// @dev    Only an owner (admin: owner1 or owner2) may call this.
+    ///         The opportunity must be {HInvestmentStatus.Hired}, i.e. a rider is
+    ///         currently paying, and the new date must be later than the current
+    ///         next-payment date. Extending the date gives the rider more time before
+    ///         {actionRiderPayin} treats their next payment as late.
+    ///         States updated: {HInvestment.riderNextPayinDate}.
+    /// @param _investmentId The id of the investment whose rider payment is extended.
+    /// @param _newNextPayinDate The new timestamp at which the rider's next payment is due;
+    ///        must be later than the investment's current next-payment date.
+    function actionAdminExtendRiderPayingForInvestment(bytes32 _investmentId, uint256 _newNextPayinDate)
+        external
+        onlyOwners
+    {
+        // Get the modifiable investment (reverts if it is not registered).
+        HInvestment storage investment = getInvestmentStorage(_investmentId);
+
+        // The hire purchase must be running so there is a rider payment to extend.
+        HInvestmentStatus[] memory allowedStatuses = new HInvestmentStatus[](1);
+        allowedStatuses[0] = HInvestmentStatus.Hired;
+
+        bool investmentNotHired = !isInvestmentStatus(_investmentId, allowedStatuses);
+        if (investmentNotHired) revert HInvestmentNotHired(_investmentId);
+
+        // The new date must push the deadline later, never earlier.
+        bool newDateNotLater = _newNextPayinDate <= investment.riderNextPayinDate;
+        if (newDateNotLater) {
+            revert HInvestmentInvalidRiderNextPayinDate(_newNextPayinDate, investment.riderNextPayinDate);
+        }
+
+        // Apply the extended next-payment date.
+        investment.riderNextPayinDate = _newNextPayinDate;
+    }
+
+    //</editor-fold desc="Action:Admin:Rider: Extend rider paying">
 
     //<editor-fold desc="Action:Rider: Pay in">
 
