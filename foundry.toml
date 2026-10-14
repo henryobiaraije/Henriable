@@ -7,3 +7,23 @@ optimizer = true
 optimizer_runs = 200
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
+
+# Deployment profile: via-IR shrinks the runtime bytecode enough to fit under the
+# EIP-170 limit (the default legacy codegen is ~25.8 KB, over the 24 KB cap). It is
+# kept out of the default profile on purpose: via-IR common-subexpression-eliminates
+# `block.timestamp` reads within a function, which breaks tests that use `vm.warp`
+# between reads (real transactions are unaffected, since time cannot change mid-call).
+# Deploy with e.g. `FOUNDRY_PROFILE=production forge script ...`; the deploy scripts
+# in script/ set this automatically.
+[profile.production]
+via_ir = true
+
+# Lints excluded project-wide:
+#   block-timestamp: the platform is intentionally time-based (round windows, payment
+#     deadlines), so a validator's small timestamp drift is acceptable.
+#   unsafe-typecast: the only occurrences are test helpers packing short string
+#     literals into bytes32 (`bytes32("keke-0001")`); every literal is <= 32 bytes, so
+#     the truncation is safe. `lint.ignore` only scopes `forge lint`, not `lint_on_build`,
+#     so the rule is excluded rather than confined to tests.
+[lint]
+exclude_lints = ["block-timestamp", "unsafe-typecast"]

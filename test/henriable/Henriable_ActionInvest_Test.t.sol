@@ -4,11 +4,11 @@ pragma solidity ^0.8.13;
 import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {
-    HAsset,
-    HInvestor,
-    HInvestmentStatus,
-    HInvestmentType,
-    USDC_UNIT
+HAsset,
+HInvestor,
+HInvestmentStatus,
+HInvestmentType,
+USDC_UNIT
 } from "../../src/types/common.sol";
 import {Henriable} from "../../src/Henriable.sol";
 import {MockUSDC} from "../../src/mocks/MockUSDC.sol";

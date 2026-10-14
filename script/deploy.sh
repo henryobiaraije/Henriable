@@ -14,6 +14,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_ROOT"
 
+# Deploy with via-IR so the contract fits under the EIP-170 size limit.
+export FOUNDRY_PROFILE="${FOUNDRY_PROFILE:-production}"
+
 # Load .env so ANVIL_RPC_URL / ANVIL_PRIVATE_KEY are exported to forge.
 if [ -f .env ]; then
     set -a

@@ -25,8 +25,6 @@ import {MockUSDC} from "../../src/mocks/MockUSDC.sol";
 /// @notice Covers extending the hired rider's next payment due date: only an owner may
 ///         call, the hire purchase must be running, and the new date must be later than
 ///         the current one. Every USD amount is in USDC base units (6 decimals).
-/// @dev    Deploys {Henriable} rather than inheriting it because Henriable's public demo
-///         functions (`testSet`) would otherwise be fuzzed as tests and fail.
 contract HenriableActionAdminExtendRiderPayingForInvestmentTest is Test {
     bytes32 internal constant ASSET_ID = bytes32("keke-0001");
     bytes32 internal constant INVESTMENT_ID = bytes32("inv-0001");

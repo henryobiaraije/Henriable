@@ -22,9 +22,6 @@ import {Henriable} from "../../src/Henriable.sol";
 ///         correct, and a valid asset is appended to the registry, indexed, and forced
 ///         active. Every USD amount is in USDC base units (6 decimals), written as
 ///         `<dollars> * USDC_UNIT`.
-/// @dev    Deploys {Henriable} rather than inheriting it because Henriable's public demo
-///         functions (`testSet`, `testState`, `testStateList`) would otherwise be fuzzed
-///         as tests and fail.
 contract HenriableActionAdminAddAssetTest is Test {
     bytes32 internal constant ASSET_ID = bytes32("keke-0001");
     bytes32 internal constant SECOND_ASSET_ID = bytes32("keke-0002");

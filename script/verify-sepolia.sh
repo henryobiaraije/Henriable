@@ -33,6 +33,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_ROOT"
 
+# Verify against the same via-IR profile used to deploy, or the bytecode will differ.
+export FOUNDRY_PROFILE="${FOUNDRY_PROFILE:-production}"
+
 # Load .env for ETHERSCAN_API_KEY / SEPOLIA_PRIVATE_KEY / USDC_ADDRESS.
 if [ -f .env ]; then
     set -a
