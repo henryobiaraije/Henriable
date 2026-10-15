@@ -29,10 +29,12 @@ import {MockUSDC} from "../../src/mocks/MockUSDC.sol";
 ///         - senior slot: buying 45 + profit 5  => 50 per investor, pool target 100
 ///         - junior slot: buying 25 + profit 5  => 30 per investor, pool target  60
 ///         - costPrice 140, ownerProfit 60, sellPrice 220, savings charge 2
-///         - split 50% senior / 25% junior / 25% owner, then 50% junior / 50% owner
-///         The investment charges a 40 USDC periodic minimum over 1-day periods, so the rider
-///         pays 42 USDC (40 + 2 savings) for five instalments and 22 USDC (20 + 2) on the final
-///         one, completing after 220 USDC of hire-purchase payments.
+///         The investment charges a 40 USDC periodic minimum over 1-day periods and a 50 USDC
+///         initial buy-in. The buy-in is credited toward the 220 USDC hire-purchase total and
+///         shared at accept (50 to the senior pool, which is owed first), leaving 170 USDC paid
+///         as four 40 USDC instalments and one final 10 USDC instalment. Payouts are
+///         target-driven: senior is filled to 100, then junior to 60, then the owner receives the
+///         rest (60, plus the 4 USDC slashed savings, so 64).
 contract HenriableWholeProcessTest is Test {
     bytes32 internal constant ASSET_ID = bytes32("keke-whole");
     bytes32 internal constant INVESTMENT_ID = bytes32("inv-whole");
@@ -131,61 +133,67 @@ contract HenriableWholeProcessTest is Test {
         // The two rejected applicants get their initial buy-in back and are marked rejected.
         assertEq(usdc.balanceOf(RIDER_REJECTED_ONE) - refundedBeforeOne, INITIAL_BUYIN);
         assertEq(usdc.balanceOf(RIDER_REJECTED_TWO) - refundedBeforeTwo, INITIAL_BUYIN);
-        assertEq(
-            henriable.getRejectedRiderIndex(bytes32(uint256(uint160(RIDER_REJECTED_ONE))), INVESTMENT_ID), 1
-        );
-        assertEq(
-            henriable.getRejectedRiderIndex(bytes32(uint256(uint160(RIDER_REJECTED_TWO))), INVESTMENT_ID), 1
-        );
+        assertEq(henriable.getRejectedRiderIndex(bytes32(uint256(uint160(RIDER_REJECTED_ONE))), INVESTMENT_ID), 1);
+        assertEq(henriable.getRejectedRiderIndex(bytes32(uint256(uint160(RIDER_REJECTED_TWO))), INVESTMENT_ID), 1);
 
-        // The accepted rider is not registered as a rider again; the profile is already stored.
+        // The accepted rider's 50 USDC buy-in is credited toward their total and shared at once:
+        // senior is owed first, so the senior pool receives all 50 (25 per senior investor).
+        assertEq(henriable.getInvestmentRiderPayinsHistory(0).totalAmountPaid, INITIAL_BUYIN);
+        assertEq(henriable.getInvestorPayoutHistory(INVESTMENT_ID, SENIOR_ONE).totalAmountPaid, 25 * USDC_UNIT);
+        assertEq(henriable.getInvestorPayoutHistory(INVESTMENT_ID, SENIOR_TWO).totalAmountPaid, 25 * USDC_UNIT);
+
         HRider memory acceptedProfile = henriable.getRider(RIDER_ACCEPTED);
         assertEq(acceptedProfile.riderAddress, RIDER_ACCEPTED);
 
         //</editor-fold desc="4. Accept one rider; the other two are refunded">
 
-        //<editor-fold desc="5. First three instalments advance the due date by one period each">
+        //<editor-fold desc="5. Two instalments finish the senior pool and start the junior pool">
 
         _payInstalment(MINIMUM_PAYMENT, journeyStart + 2 * PERIOD);
         _payInstalment(MINIMUM_PAYMENT, journeyStart + 3 * PERIOD);
-        _payInstalment(MINIMUM_PAYMENT, journeyStart + 4 * PERIOD);
 
-        assertEq(henriable.getInvestmentRiderPayinsHistory(0).totalAmountPaid, 3 * MINIMUM_PAYMENT);
-        assertEq(henriable.getInvestmentRiderSavings(0).totalAmountSaved, 3 * SAVINGS_CHARGE);
+        assertEq(henriable.getInvestmentRiderPayinsHistory(0).totalAmountPaid, INITIAL_BUYIN + 2 * MINIMUM_PAYMENT);
+        assertEq(henriable.getInvestmentRiderSavings(0).totalAmountSaved, 2 * SAVINGS_CHARGE);
 
-        //</editor-fold desc="5. First three instalments advance the due date by one period each">
+        // Senior is now fully paid (50 + 10 + 40 = 100), junior has started (30).
+        assertEq(henriable.getInvestorPayoutHistory(INVESTMENT_ID, SENIOR_ONE).totalAmountPaid, SENIOR_PER_INVESTOR_TARGET);
+        assertEq(henriable.getInvestorPayoutHistory(INVESTMENT_ID, SENIOR_TWO).totalAmountPaid, SENIOR_PER_INVESTOR_TARGET);
+        assertEq(henriable.getInvestorPayoutHistory(INVESTMENT_ID, JUNIOR_ONE).totalAmountPaid, 15 * USDC_UNIT);
+
+        //</editor-fold desc="5. Two instalments finish the senior pool and start the junior pool">
 
         //<editor-fold desc="6. The rider omits the next payment: admin extends and slashes savings">
 
         // Warp past the due date so the payment is genuinely late, then grant more time and slash
-        // 4 USDC of the 6 USDC the rider has saved as a penalty.
-        vm.warp(journeyStart + 4 * PERIOD + 1);
-        henriable.actionAdminExtendRiderPayingForInvestment(INVESTMENT_ID, journeyStart + 6 * PERIOD, 4 * USDC_UNIT);
+        // the rider's 4 USDC of savings as a penalty. Senior is fully paid, so the slash goes to
+        // the junior pool (2 per junior investor).
+        vm.warp(journeyStart + 3 * PERIOD + 1);
+        henriable.actionAdminExtendRiderPayingForInvestment(INVESTMENT_ID, journeyStart + 5 * PERIOD, 4 * USDC_UNIT);
 
-        assertEq(_nextPayinDate(), journeyStart + 6 * PERIOD);
-        assertEq(henriable.getInvestmentRiderSavings(0).totalAmountSaved, 3 * SAVINGS_CHARGE - 4 * USDC_UNIT);
+        assertEq(_nextPayinDate(), journeyStart + 5 * PERIOD);
+        assertEq(henriable.getInvestmentRiderSavings(0).totalAmountSaved, 0);
         assertEq(henriable.getStats().totalRiderSavingsSlashedUsd, 4 * USDC_UNIT);
         assertEq(henriable.getRiderSavingsSlashesCount(), 1);
+        assertEq(henriable.getInvestorPayoutHistory(INVESTMENT_ID, JUNIOR_ONE).totalAmountPaid, 17 * USDC_UNIT);
 
         //</editor-fold desc="6. The rider omits the next payment: admin extends and slashes savings">
 
         //<editor-fold desc="7. The rider keeps paying until the debt is cleared">
 
+        _payInstalment(MINIMUM_PAYMENT, journeyStart + 6 * PERIOD);
         _payInstalment(MINIMUM_PAYMENT, journeyStart + 7 * PERIOD);
 
-        // This fifth instalment caps the senior pool at its 100 target, so the split changes.
-        _payInstalment(MINIMUM_PAYMENT, journeyStart + 8 * PERIOD);
+        // Junior is now fully paid (15 + 2 slash + 13 + ... = 30 each).
+        assertEq(henriable.getInvestorPayoutHistory(INVESTMENT_ID, JUNIOR_ONE).totalAmountPaid, JUNIOR_PER_INVESTOR_TARGET);
+        assertEq(henriable.getInvestorPayoutHistory(INVESTMENT_ID, JUNIOR_TWO).totalAmountPaid, JUNIOR_PER_INVESTOR_TARGET);
 
-        assertEq(henriable.getInvestorPayoutHistory(INVESTMENT_ID, SENIOR_ONE).totalAmountPaid, SENIOR_PER_INVESTOR_TARGET);
-        assertEq(henriable.getInvestorPayoutHistory(INVESTMENT_ID, SENIOR_TWO).totalAmountPaid, SENIOR_PER_INVESTOR_TARGET);
-
-        // Final instalment: 20 USDC outstanding plus the 2 USDC savings charge.
+        // Final instalment: the 10 USDC outstanding balance plus the 2 USDC savings charge.
         uint256 riderBalanceBeforeFinal = usdc.balanceOf(RIDER_ACCEPTED);
-        _payInstalment(SELL_PRICE - 5 * MINIMUM_PAYMENT, journeyStart + 9 * PERIOD);
+        _payInstalment(SELL_PRICE - INITIAL_BUYIN - 4 * MINIMUM_PAYMENT, journeyStart + 8 * PERIOD);
 
-        // The rider pays 22 USDC but gets the 8 USDC of accumulated savings back, so the net cost
-        // is 14 USDC.
-        assertEq(riderBalanceBeforeFinal - usdc.balanceOf(RIDER_ACCEPTED), 14 * USDC_UNIT);
+        // The rider pays 12 USDC but gets the 6 USDC of accumulated savings back, so the net cost
+        // is 6 USDC.
+        assertEq(riderBalanceBeforeFinal - usdc.balanceOf(RIDER_ACCEPTED), 6 * USDC_UNIT);
 
         //</editor-fold desc="7. The rider keeps paying until the debt is cleared">
 
@@ -193,14 +201,14 @@ contract HenriableWholeProcessTest is Test {
 
         assertEq(uint256(_status()), uint256(HInvestmentStatus.Complete));
         assertEq(henriable.getInvestmentRiderPayinsHistory(0).totalAmountPaid, SELL_PRICE);
-        assertEq(henriable.getInvestmentRiderPayinsHistory(0).totalNumberOfTimesPaid, 6);
+        assertEq(henriable.getInvestmentRiderPayinsHistory(0).totalNumberOfTimesPaid, 5);
 
         // Savings are refunded in full and cleared.
         assertEq(henriable.getInvestmentRiderSavings(0).totalAmountSaved, 0);
         assertEq(henriable.getStats().riderSavingsHeldUsd, 0);
 
         // The completion lists and times are recorded.
-        assertEq(_nextPayinDate(), journeyStart + 9 * PERIOD);
+        assertEq(_nextPayinDate(), journeyStart + 8 * PERIOD);
         (, , , uint256 completedAt, uint256 transferredAt) = henriable.getInvestmentRiderInfo(0);
         assertEq(completedAt, block.timestamp);
         assertEq(transferredAt, block.timestamp);
@@ -214,39 +222,33 @@ contract HenriableWholeProcessTest is Test {
 
         //<editor-fold desc="9. Investors and owner are paid in full">
 
-        // Each senior investor receives exactly their buying price plus profit (50 USDC). The
-        // slash is accounted for by the senior cap on the fifth instalment, so the total holds.
+        // Each investor receives exactly their buying price plus profit.
         assertEq(henriable.getInvestorPayoutHistory(INVESTMENT_ID, SENIOR_ONE).totalAmountPaid, SENIOR_PER_INVESTOR_TARGET);
         assertEq(henriable.getInvestorPayoutHistory(INVESTMENT_ID, SENIOR_TWO).totalAmountPaid, SENIOR_PER_INVESTOR_TARGET);
+        assertEq(henriable.getInvestorPayoutHistory(INVESTMENT_ID, JUNIOR_ONE).totalAmountPaid, JUNIOR_PER_INVESTOR_TARGET);
+        assertEq(henriable.getInvestorPayoutHistory(INVESTMENT_ID, JUNIOR_TWO).totalAmountPaid, JUNIOR_PER_INVESTOR_TARGET);
 
-        // Each junior investor receives their buying price plus profit (30 USDC) plus a 0.5 USDC
-        // bonus: the 4 USDC slash pays the junior pool 1 USDC, split evenly between the two.
-        assertEq(
-            henriable.getInvestorPayoutHistory(INVESTMENT_ID, JUNIOR_ONE).totalAmountPaid,
-            JUNIOR_PER_INVESTOR_TARGET + 500_000
-        );
-        assertEq(
-            henriable.getInvestorPayoutHistory(INVESTMENT_ID, JUNIOR_TWO).totalAmountPaid,
-            JUNIOR_PER_INVESTOR_TARGET + 500_000
-        );
-
-        // The owner receives the promised profit plus its share of the slash: 63 USDC against a
-        // 60 USDC target.
-        assertEq(henriable.getOwnerPayoutHistory(INVESTMENT_ID).totalAmountPaid, 63 * USDC_UNIT);
+        // The owner receives the promised profit plus the slashed savings: 64 USDC vs a 60 target.
+        assertEq(henriable.getOwnerPayoutHistory(INVESTMENT_ID).totalAmountPaid, 64 * USDC_UNIT);
         assertGe(henriable.getOwnerPayoutHistory(INVESTMENT_ID).totalAmountPaid, OWNER_PROFIT);
 
-        // Everything the rider paid (sell price) plus the slashed savings was distributed across
-        // the owner and both pools: 100 senior + 61 junior + 63 owner = 224 = 220 + 4.
+        // Everything the rider paid (sell price) plus the slashed savings was distributed:
+        // 100 senior + 60 junior + 64 owner = 224 = 220 + 4.
         assertEq(henriable.getStats().totalSeniorPayoutsUsd, 100 * USDC_UNIT);
-        assertEq(henriable.getStats().totalJuniorPayoutsUsd, 61 * USDC_UNIT);
-        assertEq(henriable.getStats().totalOwnerPayoutsUsd, 63 * USDC_UNIT);
+        assertEq(henriable.getStats().totalJuniorPayoutsUsd, 60 * USDC_UNIT);
+        assertEq(henriable.getStats().totalOwnerPayoutsUsd, 64 * USDC_UNIT);
         assertEq(
             henriable.getStats().totalSeniorPayoutsUsd + henriable.getStats().totalJuniorPayoutsUsd
                 + henriable.getStats().totalOwnerPayoutsUsd,
             SELL_PRICE + 4 * USDC_UNIT
         );
 
-        assertEq(henriable.getStats().totalPayinsUsd, 5 * (MINIMUM_PAYMENT + SAVINGS_CHARGE) + (SELL_PRICE - 5 * MINIMUM_PAYMENT + SAVINGS_CHARGE));
+        // Gross rider money in: the 50 buy-in plus four 42 USDC instalments plus the 12 USDC final.
+        assertEq(
+            henriable.getStats().totalPayinsUsd,
+            INITIAL_BUYIN + 4 * (MINIMUM_PAYMENT + SAVINGS_CHARGE)
+                + (SELL_PRICE - INITIAL_BUYIN - 4 * MINIMUM_PAYMENT + SAVINGS_CHARGE)
+        );
         assertEq(henriable.getStats().investmentsPaidInFull, 1);
         assertEq(henriable.getStats().investmentsInHire, 0);
 

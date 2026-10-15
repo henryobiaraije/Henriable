@@ -221,20 +221,15 @@ contract HenriableActionAdminExtendRiderPayingForInvestmentTest is Test {
 
         henriable.actionAdminExtendRiderPayingForInvestment(INVESTMENT_ID, _nextPayinDate() + 1 days, 1 * USDC_UNIT);
 
-        // The slash pays out through the normal payout lists, tagged by type.
-        assertEq(henriable.getOwnerPayoutsCount(), ownerPayoutsBefore + 1);
-        HOwnerPayout memory ownerPayout = henriable.getOwnerPayoutAt(ownerPayoutsBefore);
-        assertEq(uint256(ownerPayout.payoutType), uint256(HPayoutType.RiderSavingsSlash));
-        assertEq(ownerPayout.amountPaid, 50_000);
+        // The slash pays out through the normal payout lists, tagged by type. Senior is still
+        // owed, so the whole slash goes to the senior pool and no owner entry is created.
+        assertEq(henriable.getOwnerPayoutsCount(), ownerPayoutsBefore);
+        assertEq(henriable.getInvestorPayoutsCount(), investorPayoutsBefore + 1);
 
-        assertEq(henriable.getInvestorPayoutsCount(), investorPayoutsBefore + 2);
         HInvestorPayout memory seniorPayout = henriable.getInvestorPayoutAt(investorPayoutsBefore);
         assertEq(uint256(seniorPayout.payoutType), uint256(HPayoutType.RiderSavingsSlash));
-        assertEq(seniorPayout.amountPaid, 700_000);
-
-        HInvestorPayout memory juniorPayout = henriable.getInvestorPayoutAt(investorPayoutsBefore + 1);
-        assertEq(uint256(juniorPayout.payoutType), uint256(HPayoutType.RiderSavingsSlash));
-        assertEq(juniorPayout.amountPaid, 250_000);
+        assertEq(seniorPayout.addressPaidInto, SENIOR);
+        assertEq(seniorPayout.amountPaid, 1 * USDC_UNIT);
     }
 
     function test_ActionAdminExtendRiderPayingForInvestment_PaysSlashToInvestorsAndOwner() public {
@@ -246,9 +241,10 @@ contract HenriableActionAdminExtendRiderPayingForInvestmentTest is Test {
 
         henriable.actionAdminExtendRiderPayingForInvestment(INVESTMENT_ID, _nextPayinDate() + 1 days, 1 * USDC_UNIT);
 
-        assertEq(usdc.balanceOf(SENIOR) - seniorBalanceBefore, 700_000);
-        assertEq(usdc.balanceOf(JUNIOR) - juniorBalanceBefore, 250_000);
-        assertEq(usdc.balanceOf(address(this)) - ownerBalanceBefore, 50_000);
+        // Senior is still owed, so the whole 1 USDC slash goes to the senior pool.
+        assertEq(usdc.balanceOf(SENIOR) - seniorBalanceBefore, 1 * USDC_UNIT);
+        assertEq(usdc.balanceOf(JUNIOR) - juniorBalanceBefore, 0);
+        assertEq(usdc.balanceOf(address(this)) - ownerBalanceBefore, 0);
     }
 
     function test_ActionAdminExtendRiderPayingForInvestment_ExtendsWithoutSlash_WhenSlashIsZero() public {

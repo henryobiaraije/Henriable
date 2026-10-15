@@ -10,6 +10,7 @@ import {
     HInvestmentStatus,
     HInvestmentType,
     HInvestor,
+    HPayingHistory,
     HRiderDidNotApplyForHire,
     HRiderDoesNotExist,
     USDC_UNIT
@@ -21,9 +22,10 @@ import {MockUSDC} from "../../src/mocks/MockUSDC.sol";
 /// @title Tests for {Henriable.actionAdminAcceptRider}.
 /// @notice Covers choosing the hired rider from the applicant pool: only an owner may call, the
 ///         hire round must be open, the chosen address must be a registered applicant, and every
-///         other applicant has their initial buy-in refunded while the accepted rider's stays in
-///         the contract. Accepting also starts the rider's payment clock. Every USD amount is in
-///         USDC base units (6 decimals).
+///         other applicant has their initial buy-in refunded. The accepted rider's buy-in is
+///         credited toward their hire-purchase total and shared with the investor pools and the
+///         owner immediately. Accepting also starts the rider's payment clock. Every USD amount
+///         is in USDC base units (6 decimals).
 contract HenriableActionAdminAcceptRiderTest is Test {
     bytes32 internal constant ASSET_ID = bytes32("keke-0001");
     bytes32 internal constant INVESTMENT_ID = bytes32("inv-0001");
@@ -144,16 +146,38 @@ contract HenriableActionAdminAcceptRiderTest is Test {
 
         henriable.actionAdminAcceptRider(INVESTMENT_ID, RIDER);
 
-        // The rejected applicant gets their initial buy-in back...
+        // The rejected applicant gets their initial buy-in back, and the accepted rider's
+        // buy-in is shared out immediately, so the contract releases both.
         assertEq(usdc.balanceOf(OTHER) - otherBefore, INITIAL_BUYIN);
-        assertEq(usdc.balanceOf(address(henriable)), contractBefore - INITIAL_BUYIN);
+        assertEq(usdc.balanceOf(address(henriable)), contractBefore - 2 * INITIAL_BUYIN);
 
-        // ...and is marked rejected, while the accepted rider's buy-in stays in the contract.
+        // The rejected applicant is marked rejected, the accepted rider is not.
         bytes32 otherId = bytes32(uint256(uint160(OTHER)));
         assertEq(henriable.getRejectedRiderIndex(otherId, INVESTMENT_ID), 1);
 
         bytes32 riderId = bytes32(uint256(uint160(RIDER)));
         assertEq(henriable.getRejectedRiderIndex(riderId, INVESTMENT_ID), 0);
+    }
+
+    /// @notice The accepted rider's buy-in counts toward their hire-purchase total and is shared
+    ///         with the senior pool immediately (senior is paid first while it is owed).
+    function test_ActionAdminAcceptRider_SharesAcceptedBuyin_AndCreditsTotal() public {
+        uint256 seniorBefore = usdc.balanceOf(SENIOR);
+        uint256 ownerBefore = usdc.balanceOf(address(this));
+
+        henriable.actionAdminAcceptRider(INVESTMENT_ID, RIDER);
+
+        // The buy-in is credited toward the rider's total, so their periodic payments cover the
+        // rest of the sell price.
+        HPayingHistory memory history = henriable.getInvestmentRiderPayinsHistory(0);
+        assertEq(history.riderAddress, RIDER);
+        assertEq(history.totalAmountPaid, INITIAL_BUYIN);
+
+        // It is shared right away: the senior pool is owed first, so it receives the full buy-in.
+        assertEq(usdc.balanceOf(SENIOR) - seniorBefore, INITIAL_BUYIN);
+        assertEq(usdc.balanceOf(address(this)) - ownerBefore, 0);
+        assertEq(henriable.getInvestorPayoutHistory(INVESTMENT_ID, SENIOR).totalAmountPaid, INITIAL_BUYIN);
+        assertEq(henriable.getStats().totalPayinsUsd, INITIAL_BUYIN);
     }
 
     //<editor-fold desc="Reverts">

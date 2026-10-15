@@ -27,6 +27,7 @@ import {
     HInvestmentInvalidPeriodicRiderPayingInMinutes,
     HInvestmentInvalidRiderInitialBuyin,
     HInvestmentInvalidRiderNextPayinDate,
+    HInvestmentRiderInitialBuyinTooHigh,
     HInvestmentInvalidSettings,
     HInvestmentInvalidStartTime,
     HInvestmentNoOpenSlot,
@@ -261,6 +262,13 @@ contract Henriable is HHelper {
 
             bool assetNotActive = !asset.active;
             if (assetNotActive) revert HAssetNotActive(_assetId);
+
+            // The buy-in is credited toward the hire-purchase total, so it must leave a
+            // balance to pay over the term.
+            bool initialBuyinNotBelowSellPrice = _riderInitialBuyinUsd >= asset.sellPrice;
+            if (initialBuyinNotBelowSellPrice) {
+                revert HInvestmentRiderInitialBuyinTooHigh(_riderInitialBuyinUsd, asset.sellPrice);
+            }
         }
 
         // The rider economics must be non-zero so the hire purchase can start and pay out.
@@ -701,11 +709,13 @@ contract Henriable is HHelper {
     ///         hired rider yet; the chosen rider must exist, must have applied for the
     ///         investment (recorded by {actionRiderRegisterAsARider}) and must not have been
     ///         rejected before. Every other applicant is marked rejected via {rejectedRiders}
-    ///         and has their initial buy-in refunded, while the accepted rider's buy-in stays
-    ///         in the contract. The investment then moves to {HInvestmentStatus.Hired} and
+    ///         and has their initial buy-in refunded. The accepted rider's buy-in is credited
+    ///         toward their hire-purchase total and shared with the investor pools and the
+    ///         owner immediately. The investment then moves to {HInvestmentStatus.Hired} and
     ///         the rider's next payment date is set one period from now.
     ///         States updated: {HInvestment.riderWhoHiredIt}, {HInvestment.riderNextPayinDate},
-    ///         {HInvestment.status}, {rejectedRiders}.
+    ///         {HInvestment.status}, {rejectedRiders}, {HInvestment.riderPayinsHistory},
+    ///         {ownerPayoutsList}, {investorPayoutList} and the payout histories.
     /// @param _investmentId The id of the investment whose rider is being chosen.
     /// @param _riderAddress The applicant to accept as the hired rider.
     function actionAdminAcceptRider(bytes32 _investmentId, address _riderAddress) external onlyOwners {
@@ -768,9 +778,9 @@ contract Henriable is HHelper {
         //<editor-fold desc="Reject and refund other applicants">
 
         // Reject every other applicant and refund the initial buy-in each of them paid.
-        // The refund amount is the investment's initial buy-in, which is exactly what
+        // The buy-in is the investment's initial buy-in, which is exactly what
         // {actionRiderRegisterAsARider} pulled in from each applicant.
-        uint256 refundAmount = investment.riderInitialBuyinUsd;
+        uint256 initialBuyin = investment.riderInitialBuyinUsd;
         for (uint256 i = 0; i < investment.ridersHirePurchaseRequestsList.length; i++) {
             address applicant = address(uint160(uint256(getInvestmentHireRequestStorage(_investmentId, i).riderId)));
 
@@ -790,12 +800,28 @@ contract Henriable is HHelper {
             rejectedRiders[applicantId][_investmentId] = 1;
 
             // Interactions: refund this applicant's initial buy-in.
-            if (refundAmount != 0) {
-                ownerUsdToken.safeTransfer(applicant, refundAmount);
+            if (initialBuyin != 0) {
+                ownerUsdToken.safeTransfer(applicant, initialBuyin);
             }
         }
 
         //</editor-fold desc="Reject and refund other applicants">
+
+        //<editor-fold desc="Credit and share the accepted rider's initial buy-in">
+
+        // The accepted rider's buy-in counts toward their hire-purchase total and is shared
+        // with the investor pools and the owner immediately, like any other rider payment.
+        // The funds were pulled into the contract by {actionRiderRegisterAsARider}.
+        investment.riderPayinsHistory.riderAddress = _riderAddress;
+        investment.riderPayinsHistory.totalAmountPaid += initialBuyin;
+        stats.totalPayinsUsd += initialBuyin;
+
+        HAsset storage asset = getAssetStorage(investment.assetId);
+        HSharingBreakdown memory buyinBreakdown = calcSharingFormula(investment, asset, initialBuyin);
+        recordDistribution(investment, _investmentId, buyinBreakdown, HPayoutType.RiderPaying);
+        transferDistribution(investment, buyinBreakdown);
+
+        //</editor-fold desc="Credit and share the accepted rider's initial buy-in">
 
         //<editor-fold desc="Mark the investment Hired">
 

@@ -72,24 +72,25 @@ struct HAsset {
     /// @notice Profit owner will earn over time, in USDC base units (6 decimals).
     uint256 ownerProfit;
 
-    /// @notice Share of each rider payment (in percent) credited equally to the senior
-    ///         investor pool while the senior pool is not yet fully paid.
+    /// @notice Reserved. Payouts are driven by each pool's buying price plus profit (see
+    ///         {HAsset.oneSeniorInvestorBuyingPrice}/{HAsset.oneSeniorInvestorProfit} and their
+    ///         junior equivalents), so this share no longer affects any payout.
     uint256 sharingPercentSeniorInvestor;
 
-    /// @notice Share of each rider payment (in percent) credited equally to the junior
-    ///         investor pool while the senior pool is not yet fully paid.
+    /// @notice Reserved. Payouts are driven by each pool's buying price plus profit, so this
+    ///         share no longer affects any payout.
     uint256 sharingPercentJuniorInvestor;
 
-    /// @notice Share of each rider payment (in percent) kept by the owner while the senior
-    ///         pool is not yet fully paid. The owner also absorbs rounding and any overflow.
+    /// @notice Reserved. The owner receives the remainder after both pools are paid up to
+    ///         their buying price plus profit, so this share no longer affects any payout.
     uint256 sharingPercentOwner;
 
-    /// @notice Share of each rider payment (in percent) credited equally to the junior
-    ///         investor pool once the senior pool is fully paid.
+    /// @notice Reserved. Payouts are driven by each pool's buying price plus profit, so this
+    ///         share no longer affects any payout.
     uint256 sharingPercentJuniorInvestorAfterSeniorPaid;
 
-    /// @notice Share of each rider payment (in percent) kept by the owner once the senior
-    ///         pool is fully paid. The owner also absorbs rounding and any overflow.
+    /// @notice Reserved. The owner receives the remainder after both pools are paid up to
+    ///         their buying price plus profit, so this share no longer affects any payout.
     uint256 sharingPercentOwnerAfterSeniorPaid;
 
     /// @notice Number of senior investor slots required to fund one unit of this asset.
@@ -655,6 +656,13 @@ error HInvestmentDoesNotExist(bytes32 id);
 
 /// @notice Thrown when an investment is registered with a zero rider initial buy-in.
 error HInvestmentInvalidRiderInitialBuyin();
+
+/// @notice Thrown when an investment's initial rider buy-in is not below the asset's sell price.
+/// @dev    The buy-in is credited toward the rider's hire-purchase total, so it must be less
+///         than the sell price or the rider would have nothing left to pay over the term.
+/// @param buyin The supplied initial buy-in, in USDC base units (6 decimals).
+/// @param sellPrice The asset's sell price, in USDC base units (6 decimals).
+error HInvestmentRiderInitialBuyinTooHigh(uint256 buyin, uint256 sellPrice);
 
 /// @notice Thrown when an investment is registered with a zero periodic rider paying period.
 error HInvestmentInvalidPeriodicRiderPayingInMinutes();

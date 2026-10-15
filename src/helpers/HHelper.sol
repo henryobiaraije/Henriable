@@ -351,18 +351,45 @@ contract HHelper is Ownable {
 
     //</editor-fold desc="calcSeniorPoolPaidSoFar">
 
+    //<editor-fold desc="calcJuniorPoolPaidSoFar">
+
+    /// @notice Sums how much the junior investor pool has been paid so far on an investment.
+    /// @dev    An address may hold several junior seats, so a naive sum over the list would
+    ///         count that investor's aggregate payout history once per seat. The mapping
+    ///         {HInvestment.juniorInvestors} points at the investor's most recent seat, so
+    ///         only that seat's entry counts, keeping each investor's total counted once.
+    /// @param investment The investment (storage reference).
+    /// @return The total amount paid to junior investors, in USDC base units (6 decimals).
+    function calcJuniorPoolPaidSoFar(HInvestment storage investment) internal view returns (uint256) {
+        uint256 juniorPaidSoFar = 0;
+        address[] storage juniorInvestorsList = investment.juniorInvestorsList;
+
+        for (uint256 i = 0; i < juniorInvestorsList.length; i++) {
+            address investor = juniorInvestorsList[i];
+
+            bool lastSeatOfInvestor = investment.juniorInvestors[investor] == i + 1;
+            if (lastSeatOfInvestor) {
+                juniorPaidSoFar += investment.investorPayoutHistory[investor].totalAmountPaid;
+            }
+        }
+
+        return juniorPaidSoFar;
+    }
+
+    //</editor-fold desc="calcJuniorPoolPaidSoFar">
+
     //<editor-fold desc="calcSharingFormula">
 
-    /// @notice Splits one rider periodic payment across the owner and the two investor pools.
+    /// @notice Splits one rider payment across the owner and the two investor pools.
     /// @dev    The rider's refundable savings charge is collected on top of the payment and is
-    ///         not part of this split. While the senior pool is not yet fully paid the payment
-    ///         is shared as {HAsset.sharingPercentSeniorInvestor} to the senior pool,
-    ///         {HAsset.sharingPercentJuniorInvestor} to the junior pool and the rest to the
-    ///         owner, with the senior share never exceeding what the senior pool is still owed.
-    ///         Once the senior pool is fully paid the split becomes
-    ///         {HAsset.sharingPercentJuniorInvestorAfterSeniorPaid} to the junior pool and the
-    ///         rest to the owner. The owner absorbs integer-division dust and any senior
-    ///         overflow.
+    ///         not part of this split. The split is driven by what each pool is still owed, not
+    ///         by configurable percentages: the payment first fills the senior pool up to its
+    ///         remaining target (seats x (buying price + profit)), then the junior pool up to
+    ///         its target, and the owner receives whatever is left. Because the asset's sell
+    ///         price covers the two pool targets plus {HAsset.ownerProfit}, this pays every
+    ///         investor their buying price plus profit in full and leaves the owner exactly its
+    ///         promised profit (plus any surplus when the sell price exceeds the targets). The
+    ///         owner absorbs integer-division dust.
     /// @param investment The investment being paid (storage reference).
     /// @param asset The asset backing the investment (storage reference).
     /// @param amount The rider payment to split, in USDC base units (6 decimals)
@@ -373,47 +400,42 @@ contract HHelper is Ownable {
         view
         returns (HSharingBreakdown memory)
     {
-        //<editor-fold desc="Check whether the senior pool is still owed money">
+        //<editor-fold desc="Work out what each pool is still owed">
 
-        // What the whole senior pool must receive over the term: slots x (buying price + profit).
-        uint256 seniorPoolTotal = asset.totalNumberOfSeniorInvestorsNeeded
+        // What each pool must receive over the term: slots x (buying price + profit).
+        uint256 seniorPoolTarget = asset.totalNumberOfSeniorInvestorsNeeded
             * (asset.oneSeniorInvestorBuyingPrice + asset.oneSeniorInvestorProfit);
-        // What the senior pool has already received.
-        uint256 seniorPoolPaidSoFar = calcSeniorPoolPaidSoFar(investment);
-        // The senior pool still gets paid until it has received its full target.
-        bool seniorStillOwed = seniorPoolPaidSoFar < seniorPoolTotal;
-        // How much the senior pool is still owed in total.
+        uint256 juniorPoolTarget = asset.totalNumberOfJuniorInvestorsNeeded
+            * (asset.oneJuniorInvestorBuyingPrice + asset.oneJuniorInvestorProfit);
+
+        // What each pool has already received.
+        uint256 seniorPaidSoFar = calcSeniorPoolPaidSoFar(investment);
+        uint256 juniorPaidSoFar = calcJuniorPoolPaidSoFar(investment);
+
+        // How much each pool is still owed (0 once its target is reached).
         uint256 seniorPoolRemaining = 0;
+        bool seniorStillOwed = seniorPaidSoFar < seniorPoolTarget;
         if (seniorStillOwed) {
-            seniorPoolRemaining = seniorPoolTotal - seniorPoolPaidSoFar;
+            seniorPoolRemaining = seniorPoolTarget - seniorPaidSoFar;
         }
 
-        //</editor-fold desc="Check whether the senior pool is still owed money">
-
-        //<editor-fold desc="Split the payment">
-
-        uint256 seniorInvestorsAmount = 0;
-        uint256 juniorInvestorsAmount = 0;
-
-        if (seniorStillOwed) {
-            // Normal split: senior and junior take their percentages, owner gets the rest.
-            seniorInvestorsAmount = amount * asset.sharingPercentSeniorInvestor / 100;
-            juniorInvestorsAmount = amount * asset.sharingPercentJuniorInvestor / 100;
-
-            // Never pay the senior pool more than it is still owed; the owner takes the excess.
-            bool seniorShareExceedsRemaining = seniorInvestorsAmount > seniorPoolRemaining;
-            if (seniorShareExceedsRemaining) {
-                seniorInvestorsAmount = seniorPoolRemaining;
-            }
-        } else {
-            // Senior pool is fully paid: junior takes its larger share, owner gets the rest.
-            juniorInvestorsAmount = amount * asset.sharingPercentJuniorInvestorAfterSeniorPaid / 100;
+        uint256 juniorPoolRemaining = 0;
+        bool juniorStillOwed = juniorPaidSoFar < juniorPoolTarget;
+        if (juniorStillOwed) {
+            juniorPoolRemaining = juniorPoolTarget - juniorPaidSoFar;
         }
 
-        // Owner takes the remainder: its own percentage, rounding dust and any senior overflow.
-        uint256 ownerAmount = amount - seniorInvestorsAmount - juniorInvestorsAmount;
+        //</editor-fold desc="Work out what each pool is still owed">
 
-        //</editor-fold desc="Split the payment">
+        //<editor-fold desc="Split the payment in priority order">
+
+        // Senior is paid first, then junior, then the owner takes the rest.
+        uint256 seniorInvestorsAmount = HMath.min(amount, seniorPoolRemaining);
+        uint256 remainingAfterSenior = amount - seniorInvestorsAmount;
+        uint256 juniorInvestorsAmount = HMath.min(remainingAfterSenior, juniorPoolRemaining);
+        uint256 ownerAmount = remainingAfterSenior - juniorInvestorsAmount;
+
+        //</editor-fold desc="Split the payment in priority order">
 
         //<editor-fold desc="Return the breakdown">
 

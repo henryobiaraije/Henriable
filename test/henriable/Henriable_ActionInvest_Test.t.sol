@@ -6,6 +6,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {
 HAsset,
 HInvestor,
+HInvestmentRiderInitialBuyinTooHigh,
 HInvestmentStatus,
 HInvestmentType,
 USDC_UNIT
@@ -192,6 +193,18 @@ contract HenriableActionInvestTest is Test {
         assertEq(vehicleNft.ownerOf(1), address(henriable));
         assertEq(vehicleNft.getMinter(), address(henriable));
         assertEq(address(henriable.getVehicleNft()), address(vehicleNft));
+    }
+
+    /// @notice The initial buy-in is credited toward the hire-purchase total, so it must be
+    ///         below the sell price or the rider would have nothing left to pay over the term.
+    function test_ActionAdminAddInvestment_Reverts_WhenBuyinNotBelowSellPrice() public {
+        bytes32 newId = bytes32("inv-high-buyin");
+        uint256 sellPrice = 210 * USDC_UNIT;
+
+        vm.expectRevert(
+            abi.encodeWithSelector(HInvestmentRiderInitialBuyinTooHigh.selector, sellPrice, sellPrice)
+        );
+        henriable.actionAdminAddInvestment(newId, ASSET_ID, sellPrice, 60, 10 * USDC_UNIT);
     }
 
     function _validAsset5x20(bytes32 assetId) internal pure returns (HAsset memory asset) {

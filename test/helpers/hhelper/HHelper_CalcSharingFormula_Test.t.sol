@@ -8,17 +8,20 @@ import {HHelper} from "../../../src/helpers/HHelper.sol";
 import {HenriableVehicleNFT} from "../../../src/HenriableVehicleNFT.sol";
 
 /// @title Tests for {HHelper.calcSharingFormula}.
-/// @notice The formula excludes the rider's refundable savings charge. While the senior pool is
-///         being paid off, each payment is 70% to senior, 25% to junior and the rest to the
-///         owner, with the senior share capped at what it is still owed. Once the senior pool
-///         is fully paid, the split becomes 60% to junior and 40% to the owner. The worked
-///         example uses a senior target of 5 x ($100 + $5) = $525. Every USD amount is in
-///         USDC base units (6 decimals), written as `<dollars> * USDC_UNIT`.
+/// @notice The split is target-driven, not percentage-driven: each payment first fills the
+///         senior pool up to its remaining target, then the junior pool up to its target, and
+///         the owner receives whatever is left. The rider's refundable savings charge is
+///         excluded from the split. The asset used here needs 5 senior seats at (100 + 5) = 525
+///         and 20 junior seats at (25 + 5) = 600, with an owner target of 75. Every USD amount is
+///         in USDC base units (6 decimals), written as `<dollars> * USDC_UNIT`.
 contract HHelperCalcSharingFormulaTest is Test, HHelper {
     bytes32 internal constant ASSET_ID = bytes32("keke-0001");
     bytes32 internal constant INVESTMENT_ID = bytes32("inv-0001");
     address internal constant SENIOR_INVESTOR = address(0x5111);
+    address internal constant JUNIOR_INVESTOR = address(0x7111);
+
     uint256 internal constant SENIOR_POOL_TARGET = 525 * USDC_UNIT;
+    uint256 internal constant JUNIOR_POOL_TARGET = 600 * USDC_UNIT;
 
     constructor() HHelper(address(this), IERC20(address(0)), new HenriableVehicleNFT(address(this))) {}
 
@@ -60,6 +63,8 @@ contract HHelperCalcSharingFormulaTest is Test, HHelper {
         investment.minimumRiderPeriodicPayingsUsd = 100 * USDC_UNIT;
         investment.seniorInvestorsList.push(SENIOR_INVESTOR);
         investment.seniorInvestors[SENIOR_INVESTOR] = investment.seniorInvestorsList.length;
+        investment.juniorInvestorsList.push(JUNIOR_INVESTOR);
+        investment.juniorInvestors[JUNIOR_INVESTOR] = investment.juniorInvestorsList.length;
         investments[INVESTMENT_ID] = investmentsList.length;
     }
 
@@ -67,63 +72,102 @@ contract HHelperCalcSharingFormulaTest is Test, HHelper {
         getInvestmentStorage(INVESTMENT_ID).investorPayoutHistory[SENIOR_INVESTOR].totalAmountPaid = amount;
     }
 
+    function setJuniorPaidSoFar(uint256 amount) internal {
+        getInvestmentStorage(INVESTMENT_ID).investorPayoutHistory[JUNIOR_INVESTOR].totalAmountPaid = amount;
+    }
+
     function split(uint256 amount) internal view returns (HSharingBreakdown memory) {
         return calcSharingFormula(getInvestmentStorage(INVESTMENT_ID), getAssetStorage(ASSET_ID), amount);
     }
 
-    function test_CalcSharingFormula_SplitsSeniorJuniorOwner_WhenSeniorStillOwed() public {
+    //<editor-fold desc="Senior paid first">
+
+    function test_CalcSharingFormula_PaysSeniorFirst_WhenSeniorStillOwed() public {
         HSharingBreakdown memory breakdown = split(100 * USDC_UNIT);
 
-        assertEq(breakdown.seniorInvestorsAmount, 70 * USDC_UNIT);
-        assertEq(breakdown.juniorInvestorsAmount, 25 * USDC_UNIT);
-        assertEq(breakdown.ownerAmount, 5 * USDC_UNIT);
+        assertEq(breakdown.seniorInvestorsAmount, 100 * USDC_UNIT);
+        assertEq(breakdown.juniorInvestorsAmount, 0);
+        assertEq(breakdown.ownerAmount, 0);
     }
 
-    function test_CalcSharingFormula_CapsSeniorAtRemaining_WhenSeniorAlmostPaid() public {
-        setSeniorPaidSoFar(500 * USDC_UNIT);
+    function test_CalcSharingFormula_PaysOnlySenior_WhenAmountBelowRemaining() public {
+        HSharingBreakdown memory breakdown = split(1);
+
+        assertEq(breakdown.seniorInvestorsAmount, 1);
+        assertEq(breakdown.juniorInvestorsAmount, 0);
+        assertEq(breakdown.ownerAmount, 0);
+    }
+
+    /// @notice The senior share never exceeds what the pool is still owed; the remainder spills
+    ///         to the junior pool.
+    function test_CalcSharingFormula_CapsSeniorAtRemaining_ThenFillsJunior() public {
+        setSeniorPaidSoFar(SENIOR_POOL_TARGET - 25 * USDC_UNIT);
 
         HSharingBreakdown memory breakdown = split(100 * USDC_UNIT);
 
         assertEq(breakdown.seniorInvestorsAmount, 25 * USDC_UNIT);
-        assertEq(breakdown.juniorInvestorsAmount, 25 * USDC_UNIT);
-        assertEq(breakdown.ownerAmount, 50 * USDC_UNIT);
+        assertEq(breakdown.juniorInvestorsAmount, 75 * USDC_UNIT);
+        assertEq(breakdown.ownerAmount, 0);
     }
 
-    function test_CalcSharingFormula_SplitsJuniorAndOwner_WhenSeniorFullyPaid() public {
+    //</editor-fold desc="Senior paid first">
+
+    //<editor-fold desc="Junior second">
+
+    function test_CalcSharingFormula_PaysJunior_WhenSeniorFullyPaid() public {
         setSeniorPaidSoFar(SENIOR_POOL_TARGET);
 
         HSharingBreakdown memory breakdown = split(100 * USDC_UNIT);
 
         assertEq(breakdown.seniorInvestorsAmount, 0);
-        assertEq(breakdown.juniorInvestorsAmount, 60 * USDC_UNIT);
-        assertEq(breakdown.ownerAmount, 40 * USDC_UNIT);
+        assertEq(breakdown.juniorInvestorsAmount, 100 * USDC_UNIT);
+        assertEq(breakdown.ownerAmount, 0);
     }
 
-    function test_CalcSharingFormula_SplitsJuniorAndOwner_WhenSeniorOverpaid() public {
-        setSeniorPaidSoFar(SENIOR_POOL_TARGET + 100 * USDC_UNIT);
+    function test_CalcSharingFormula_CapsJuniorAtRemaining_ThenPaysOwner() public {
+        setSeniorPaidSoFar(SENIOR_POOL_TARGET);
+        setJuniorPaidSoFar(JUNIOR_POOL_TARGET - 50 * USDC_UNIT);
 
         HSharingBreakdown memory breakdown = split(100 * USDC_UNIT);
 
         assertEq(breakdown.seniorInvestorsAmount, 0);
-        assertEq(breakdown.juniorInvestorsAmount, 60 * USDC_UNIT);
-        assertEq(breakdown.ownerAmount, 40 * USDC_UNIT);
+        assertEq(breakdown.juniorInvestorsAmount, 50 * USDC_UNIT);
+        assertEq(breakdown.ownerAmount, 50 * USDC_UNIT);
     }
 
-    function test_CalcSharingFormula_OwnerAbsorbsRoundingDust() public {
-        HSharingBreakdown memory breakdown = split(101 * USDC_UNIT);
+    //</editor-fold desc="Junior second">
 
-        assertEq(breakdown.seniorInvestorsAmount, 70_700_000);
-        assertEq(breakdown.juniorInvestorsAmount, 25_250_000);
-        assertEq(breakdown.ownerAmount, 5_050_000);
+    //<editor-fold desc="Owner last">
+
+    function test_CalcSharingFormula_PaysOwner_WhenBothPoolsFullyPaid() public {
+        setSeniorPaidSoFar(SENIOR_POOL_TARGET);
+        setJuniorPaidSoFar(JUNIOR_POOL_TARGET);
+
+        HSharingBreakdown memory breakdown = split(100 * USDC_UNIT);
+
+        assertEq(breakdown.seniorInvestorsAmount, 0);
+        assertEq(breakdown.juniorInvestorsAmount, 0);
+        assertEq(breakdown.ownerAmount, 100 * USDC_UNIT);
     }
 
-    /// @notice Splits a micro-USDC payment correctly: $0.14 == 140_000 base units becomes
-    ///         $0.098 to senior, $0.035 to junior and $0.007 to the owner (70/25/5).
+    function test_CalcSharingFormula_PaysOwner_WhenBothPoolsOverpaid() public {
+        setSeniorPaidSoFar(SENIOR_POOL_TARGET + 100 * USDC_UNIT);
+        setJuniorPaidSoFar(JUNIOR_POOL_TARGET + 100 * USDC_UNIT);
+
+        HSharingBreakdown memory breakdown = split(100 * USDC_UNIT);
+
+        assertEq(breakdown.ownerAmount, 100 * USDC_UNIT);
+    }
+
+    //</editor-fold desc="Owner last">
+
+    /// @notice A micro-USDC payment is split in base units: while senior is owed it all goes to
+    ///         senior, with nothing lost to rounding.
     function test_CalcSharingFormula_SplitsMicroPayment_InBaseUnits() public {
         HSharingBreakdown memory breakdown = split(140_000);
 
-        assertEq(breakdown.seniorInvestorsAmount, 98_000);
-        assertEq(breakdown.juniorInvestorsAmount, 35_000);
-        assertEq(breakdown.ownerAmount, 7_000);
+        assertEq(breakdown.seniorInvestorsAmount, 140_000);
+        assertEq(breakdown.juniorInvestorsAmount, 0);
+        assertEq(breakdown.ownerAmount, 0);
     }
 }
