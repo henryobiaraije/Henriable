@@ -100,6 +100,11 @@ contract HenriableWholeProcessTest is Test {
         assertEq(vehicleNft.getMinter(), address(henriable));
         assertEq(address(henriable.getVehicleNft()), address(vehicleNft));
 
+        // The reverse lookup the title metadata uses resolves the asset, with no rider yet.
+        (bytes32 titleAssetName, address titleRider) = henriable.getTitleInfo(nftTokenId);
+        assertTrue(titleAssetName != bytes32(0));
+        assertEq(titleRider, address(0));
+
         //</editor-fold desc="2. Four investors fund the investment">
 
         //<editor-fold desc="3. Open the hire round and register three riders">
@@ -129,6 +134,10 @@ contract HenriableWholeProcessTest is Test {
         (address hiredRider, , , , ) = henriable.getInvestmentRiderInfo(0);
         assertEq(hiredRider, RIDER_ACCEPTED);
         assertEq(_nextPayinDate(), journeyStart + PERIOD);
+
+        // Once hired, the title metadata's rider resolves to the hired rider.
+        (, address titleRiderAfterHire) = henriable.getTitleInfo(nftTokenId);
+        assertEq(titleRiderAfterHire, RIDER_ACCEPTED);
 
         // The two rejected applicants get their initial buy-in back and are marked rejected.
         assertEq(usdc.balanceOf(RIDER_REJECTED_ONE) - refundedBeforeOne, INITIAL_BUYIN);

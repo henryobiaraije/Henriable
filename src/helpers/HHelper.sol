@@ -116,6 +116,12 @@ contract HHelper is Ownable {
     ///         list is append-only and is never cleared.
     uint256[] internal investmentsCompleted;
 
+    /// @notice Maps a minted title token id => the investment it was minted for.
+    /// @dev    The forward link lives on the investment ({HInvestment.nftTokenId}); this is
+    ///         the reverse, so a title can resolve its investment -- and thus its asset and
+    ///         rider -- without scanning the investment list. Set once when the title mints.
+    mapping(uint256 => bytes32) internal titleInvestmentId;
+
     //</editor-fold desc="State: Investments">
 
     //<editor-fold desc="State: Investors">
@@ -531,7 +537,9 @@ contract HHelper is Ownable {
                 // Mint the vehicle title to the platform. It is held here until the rider
                 // finishes paying, then transferred to them on completion. The status
                 // transition above is one-way, so this runs exactly once per investment.
-                investment.nftTokenId = vehicleNft.mint(address(this));
+                uint256 tokenId = vehicleNft.mint(address(this));
+                investment.nftTokenId = tokenId;
+                titleInvestmentId[tokenId] = investmentId;
                 return;
             }
         }
@@ -1139,6 +1147,23 @@ contract HHelper is Ownable {
         nftTokenId = inv.nftTokenId;
         timeRiderCompletedPayments = inv.timeRiderCompletedPayments;
         timeNftTransferedToRider = inv.timeNftTransferedToRider;
+    }
+
+    /// @notice Returns what a title token needs for its metadata: the asset name and rider.
+    /// @dev    Read by {HenriableVehicleNFT.tokenURI} so the on-chain card can show the
+    ///         vehicle and the rider. Returns zero values for an unknown token, or before a
+    ///         rider is hired, which the metadata treats as "omit".
+    /// @param tokenId The title's token id.
+    /// @return assetName The bytes32 name of the asset the title represents.
+    /// @return rider The rider who hired the asset, or address(0) if none yet.
+    function getTitleInfo(uint256 tokenId) external view returns (bytes32 assetName, address rider) {
+        bytes32 investmentId = titleInvestmentId[tokenId];
+        if (investmentId == bytes32(0)) {
+            return (bytes32(0), address(0));
+        }
+        HInvestment storage inv = getInvestmentStorage(investmentId);
+        assetName = getAssetStorage(inv.assetId).name;
+        rider = inv.riderWhoHiredIt;
     }
 
     /// @notice Returns the list of senior investors for an investment.
