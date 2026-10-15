@@ -15,6 +15,7 @@ import {
     USDC_UNIT
 } from "../../src/types/common.sol";
 import {Henriable} from "../../src/Henriable.sol";
+import {HenriableVehicleNFT} from "../../src/HenriableVehicleNFT.sol";
 import {MockUSDC} from "../../src/mocks/MockUSDC.sol";
 
 /// @title Tests for {Henriable.actionAdminAcceptRider}.
@@ -37,11 +38,14 @@ contract HenriableActionAdminAcceptRiderTest is Test {
     uint256 internal constant PERIOD = 60 minutes;
 
     Henriable internal henriable;
+    HenriableVehicleNFT internal vehicleNft;
     MockUSDC internal usdc;
 
     function setUp() public {
         usdc = new MockUSDC();
-        henriable = new Henriable(address(this), IERC20(address(usdc)));
+        vehicleNft = new HenriableVehicleNFT(address(this));
+        henriable = new Henriable(address(this), IERC20(address(usdc)), vehicleNft);
+        vehicleNft.setMinter(address(henriable));
 
         henriable.actionAdminAddAsset(_validAsset());
         henriable.actionAdminAddInvestment(INVESTMENT_ID, ASSET_ID, INITIAL_BUYIN, 60, 10 * USDC_UNIT);

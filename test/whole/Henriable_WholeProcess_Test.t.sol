@@ -12,6 +12,7 @@ import {
     USDC_UNIT
 } from "../../src/types/common.sol";
 import {Henriable} from "../../src/Henriable.sol";
+import {HenriableVehicleNFT} from "../../src/HenriableVehicleNFT.sol";
 import {MockUSDC} from "../../src/mocks/MockUSDC.sol";
 
 /// @title End-to-end happy-path test of the whole Henriable process.
@@ -61,13 +62,16 @@ contract HenriableWholeProcessTest is Test {
     uint256 internal constant JUNIOR_PER_INVESTOR_TARGET = JUNIOR_BUYING + JUNIOR_PROFIT;
 
     Henriable internal henriable;
+    HenriableVehicleNFT internal vehicleNft;
     MockUSDC internal usdc;
 
     function test_WholeProcess_HappyPath_FromAssetToOwnershipTransfer() public {
         //<editor-fold desc="1. Deploy and register the asset and investment">
 
         usdc = new MockUSDC();
-        henriable = new Henriable(address(this), IERC20(address(usdc)));
+        vehicleNft = new HenriableVehicleNFT(address(this));
+        henriable = new Henriable(address(this), IERC20(address(usdc)), vehicleNft);
+        vehicleNft.setMinter(address(henriable));
 
         henriable.actionAdminAddAsset(_asset());
         henriable.actionAdminAddInvestment(INVESTMENT_ID, ASSET_ID, INITIAL_BUYIN, PERIODIC_MINUTES, MINIMUM_PAYMENT);
@@ -86,6 +90,13 @@ contract HenriableWholeProcessTest is Test {
         _invest(JUNIOR_TWO, HInvestmentType.Junior, JUNIOR_BUYING);
 
         assertEq(uint256(_status()), uint256(HInvestmentStatus.InvestmentDone));
+
+        // Funding completion mints the vehicle title to the platform.
+        (, , uint256 nftTokenId, , ) = henriable.getInvestmentRiderInfo(0);
+        assertEq(nftTokenId, 1);
+        assertEq(vehicleNft.ownerOf(nftTokenId), address(henriable));
+        assertEq(vehicleNft.getMinter(), address(henriable));
+        assertEq(address(henriable.getVehicleNft()), address(vehicleNft));
 
         //</editor-fold desc="2. Four investors fund the investment">
 
@@ -195,6 +206,9 @@ contract HenriableWholeProcessTest is Test {
         assertEq(transferredAt, block.timestamp);
         assertEq(henriable.getCompletedRiderInvestmentsCount(), 1);
         assertEq(henriable.getInvestmentsCompletedCount(), 1);
+
+        // The vehicle title is handed to the rider on completion.
+        assertEq(vehicleNft.ownerOf(nftTokenId), RIDER_ACCEPTED);
 
         //</editor-fold desc="8. Completion: ownership, savings and history">
 

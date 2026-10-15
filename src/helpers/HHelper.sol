@@ -7,6 +7,7 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {HMath} from "./HMath.sol";
+import {HenriableVehicleNFT} from "../HenriableVehicleNFT.sol";
 import {
     HAsset,
     HAssetDoesNotExist,
@@ -54,6 +55,11 @@ contract HHelper is Ownable {
 
     /// @notice USDC token used for all investments, payouts and payments.
     IERC20 internal ownerUsdToken;
+
+    /// @notice Vehicle-title NFT collection used to hold and hand over asset titles.
+    /// @dev    Minted to this contract when an investment is fully funded and transferred to
+    ///         the rider once the hire purchase is paid in full.
+    HenriableVehicleNFT internal vehicleNft;
 
     /// @notice All owner/contract payouts ever made.
     HOwnerPayout[] internal ownerPayoutsList;
@@ -197,11 +203,13 @@ contract HHelper is Ownable {
 
     //<editor-fold desc="Constructor">
 
-    /// @notice Deploys the helper, setting the contract owner and the USDC token.
+    /// @notice Deploys the helper, setting the contract owner, the USDC token and the NFT.
     /// @param initialOwner The address that will own the contract.
     /// @param ownerUsdToken_ The USDC token used for investments, payouts and payments.
-    constructor(address initialOwner, IERC20 ownerUsdToken_) Ownable(initialOwner) {
+    /// @param vehicleNft_ The vehicle-title NFT collection whose minter is this contract.
+    constructor(address initialOwner, IERC20 ownerUsdToken_, HenriableVehicleNFT vehicleNft_) Ownable(initialOwner) {
         ownerUsdToken = ownerUsdToken_;
+        vehicleNft = vehicleNft_;
     }
 
     //</editor-fold desc="Constructor">
@@ -497,6 +505,11 @@ contract HHelper is Ownable {
             if (investmentFullyFunded) {
                 setInvestmentStatus(investment, HInvestmentStatus.InvestmentDone);
                 investment.investmentsDoneAt = block.timestamp;
+
+                // Mint the vehicle title to the platform. It is held here until the rider
+                // finishes paying, then transferred to them on completion. The status
+                // transition above is one-way, so this runs exactly once per investment.
+                investment.nftTokenId = vehicleNft.mint(address(this));
                 return;
             }
         }
@@ -898,6 +911,14 @@ contract HHelper is Ownable {
     /// @return The owner2 address, or address(0) when unset.
     function getOwner2() external view returns (address) {
         return owner2;
+    }
+
+    /// @notice Returns the vehicle-title NFT collection used for asset titles.
+    /// @dev    Lets callers reach the collection (e.g. to read token metadata) through the
+    ///         platform address alone, without a separately configured NFT address.
+    /// @return The {HenriableVehicleNFT} collection.
+    function getVehicleNft() external view returns (HenriableVehicleNFT) {
+        return vehicleNft;
     }
 
     //</editor-fold desc="Owner Getters">

@@ -62,6 +62,7 @@ import {
     HStats
 } from "./types/common.sol";
 import {HHelper} from "./helpers/HHelper.sol";
+import {HenriableVehicleNFT} from "./HenriableVehicleNFT.sol";
 
 //</editor-fold desc="Imports">
 
@@ -78,10 +79,14 @@ contract Henriable is HHelper {
 
     //<editor-fold desc="Constructor">
 
-    /// @notice Deploys Henriable, setting the contract owner and the USDC token.
+    /// @notice Deploys Henriable, setting the contract owner, the USDC token and the NFT.
     /// @param initialOwner The address that will own the contract.
     /// @param ownerUsdToken_ The USDC token used for investments, payouts and payments.
-    constructor(address initialOwner, IERC20 ownerUsdToken_) HHelper(initialOwner, ownerUsdToken_) {}
+    /// @param vehicleNft_ The vehicle-title NFT collection, whose minter must be set to
+    ///        this contract so it can mint and later transfer asset titles.
+    constructor(address initialOwner, IERC20 ownerUsdToken_, HenriableVehicleNFT vehicleNft_)
+        HHelper(initialOwner, ownerUsdToken_, vehicleNft_)
+    {}
 
     //</editor-fold desc="Constructor">
 
@@ -1040,13 +1045,15 @@ contract Henriable is HHelper {
         completedRiderInvestmentList.push(investmentIndexPlusOne);
         investmentsCompleted.push(investmentIndexPlusOne);
 
-        // @todo: mint and transfer the NFT title of the asset to the rider once the NFT
-        //        contract is in place.
-
-        // Interactions: refund the savings last, after every state write.
+        // Interactions: refund the savings and hand over the vehicle title last, after every
+        // state write. The title was minted to this contract when the investment was funded.
         if (riderSavingsAmount != 0) {
             ownerUsdToken.safeTransfer(_rider, riderSavingsAmount);
         }
+
+        // `transferFrom` rather than `safeTransferFrom` so a rider using a contract wallet
+        // that does not implement the ERC721 receiver hook can still complete the purchase.
+        vehicleNft.transferFrom(address(this), _rider, investment.nftTokenId);
     }
 
     //</editor-fold desc="Action:Rider: Complete payment">

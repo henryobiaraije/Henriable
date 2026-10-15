@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {HAsset, HInvestment, USDC_UNIT} from "../../../src/types/common.sol";
 import {HHelper} from "../../../src/helpers/HHelper.sol";
+import {HenriableVehicleNFT} from "../../../src/HenriableVehicleNFT.sol";
 
 /// @title Tests for {HHelper.calcSeniorPoolPaidSoFar}.
 /// @notice The helper sums the payout history of every senior investor on an investment.
@@ -15,7 +16,7 @@ contract HHelperCalcSeniorPoolPaidSoFarTest is Test, HHelper {
     address internal constant SENIOR_ONE = address(0x5111);
     address internal constant SENIOR_TWO = address(0x5222);
 
-    constructor() HHelper(address(this), IERC20(address(0))) {}
+    constructor() HHelper(address(this), IERC20(address(0)), new HenriableVehicleNFT(address(this))) {}
 
     function seedInvestment() internal {
         HAsset memory asset = HAsset({

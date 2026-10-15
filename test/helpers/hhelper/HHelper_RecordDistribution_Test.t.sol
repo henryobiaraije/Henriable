@@ -16,6 +16,7 @@ import {
     USDC_UNIT
 } from "../../../src/types/common.sol";
 import {HHelper} from "../../../src/helpers/HHelper.sol";
+import {HenriableVehicleNFT} from "../../../src/HenriableVehicleNFT.sol";
 
 /// @title Tests for {HHelper.recordDistribution}.
 /// @notice The helper writes the accounting for one payment split across the owner and the
@@ -29,7 +30,7 @@ contract HHelperRecordDistributionTest is Test, HHelper {
     address internal constant SENIOR_TWO = address(0x5222);
     address internal constant JUNIOR_ONE = address(0x7111);
 
-    constructor() HHelper(address(this), IERC20(address(0))) {}
+    constructor() HHelper(address(this), IERC20(address(0)), new HenriableVehicleNFT(address(this))) {}
 
     function setUp() public {
         _seedAsset();

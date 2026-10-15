@@ -11,6 +11,7 @@ HInvestmentType,
 USDC_UNIT
 } from "../../src/types/common.sol";
 import {Henriable} from "../../src/Henriable.sol";
+import {HenriableVehicleNFT} from "../../src/HenriableVehicleNFT.sol";
 import {MockUSDC} from "../../src/mocks/MockUSDC.sol";
 
 contract HenriableActionInvestTest is Test {
@@ -20,11 +21,14 @@ contract HenriableActionInvestTest is Test {
     address internal constant JUNIOR = address(0xB0B);
 
     Henriable internal henriable;
+    HenriableVehicleNFT internal vehicleNft;
     MockUSDC internal usdc;
 
     function setUp() public {
         usdc = new MockUSDC();
-        henriable = new Henriable(address(this), IERC20(address(usdc)));
+        vehicleNft = new HenriableVehicleNFT(address(this));
+        henriable = new Henriable(address(this), IERC20(address(usdc)), vehicleNft);
+        vehicleNft.setMinter(address(henriable));
 
         henriable.actionAdminAddAsset(_validAsset());
 
@@ -168,6 +172,26 @@ contract HenriableActionInvestTest is Test {
 
         (, , , , , , , HInvestmentStatus doneStatus) = henriable.getInvestmentCore(1);
         assertEq(uint256(doneStatus), uint256(HInvestmentStatus.InvestmentDone));
+    }
+
+    function test_ActionInvest_MintsVehicleNft_WhenFullyFunded() public {
+        vm.prank(SENIOR);
+        henriable.actionInvest(_investor(), HInvestmentType.Senior, INVESTMENT_ID, 100 * USDC_UNIT);
+
+        // Not funded yet, so no title has been minted.
+        (, , uint256 nftBefore, , ) = henriable.getInvestmentRiderInfo(0);
+        assertEq(nftBefore, 0);
+        assertEq(vehicleNft.getNextTokenId(), 0);
+
+        vm.prank(JUNIOR);
+        henriable.actionInvest(_investor(), HInvestmentType.Junior, INVESTMENT_ID, 25 * USDC_UNIT);
+
+        // Funding completes: one title is minted to the platform and recorded on the investment.
+        (, , uint256 nftTokenId, , ) = henriable.getInvestmentRiderInfo(0);
+        assertEq(nftTokenId, 1);
+        assertEq(vehicleNft.ownerOf(1), address(henriable));
+        assertEq(vehicleNft.getMinter(), address(henriable));
+        assertEq(address(henriable.getVehicleNft()), address(vehicleNft));
     }
 
     function _validAsset5x20(bytes32 assetId) internal pure returns (HAsset memory asset) {

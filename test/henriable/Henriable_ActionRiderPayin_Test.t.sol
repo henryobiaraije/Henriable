@@ -26,6 +26,7 @@ import {
     USDC_UNIT
 } from "../../src/types/common.sol";
 import {Henriable} from "../../src/Henriable.sol";
+import {HenriableVehicleNFT} from "../../src/HenriableVehicleNFT.sol";
 import {MockUSDC} from "../../src/mocks/MockUSDC.sol";
 
 /// @title Tests for {Henriable.actionRiderPayin}.
@@ -56,11 +57,14 @@ contract HenriableActionRiderPayinTest is Test {
     uint256 internal constant PERIOD = 60 minutes;
 
     Henriable internal henriable;
+    HenriableVehicleNFT internal vehicleNft;
     MockUSDC internal usdc;
 
     function setUp() public {
         usdc = new MockUSDC();
-        henriable = new Henriable(address(this), IERC20(address(usdc)));
+        vehicleNft = new HenriableVehicleNFT(address(this));
+        henriable = new Henriable(address(this), IERC20(address(usdc)), vehicleNft);
+        vehicleNft.setMinter(address(henriable));
 
         henriable.actionAdminAddAsset(_validAsset());
         henriable.actionAdminAddInvestment(INVESTMENT_ID, ASSET_ID, 50 * USDC_UNIT, 60, MINIMUM_PAYMENT);
@@ -325,6 +329,11 @@ contract HenriableActionRiderPayinTest is Test {
         assertEq(henriable.getInvestmentsCompletedCount(), 1);
         assertEq(henriable.getInvestmentsCompletedAt(0), 1);
         assertEq(_stats().investmentsPaidInFull, 1);
+
+        // The vehicle title, held by the platform while the rider paid, is now the rider's.
+        (, , uint256 nftTokenId, , ) = henriable.getInvestmentRiderInfo(0);
+        assertEq(nftTokenId, 1);
+        assertEq(vehicleNft.ownerOf(nftTokenId), RIDER);
     }
 
     function test_ActionRiderPayin_Reverts_AfterCompletion() public {

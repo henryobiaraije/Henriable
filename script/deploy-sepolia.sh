@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 #
-# Sepolia testnet deployment of the Henriable platform (see script/Deploy.s.sol).
-# Uses the real Circle USDC on Sepolia and verifies the contract on Etherscan
-# when an ETHERSCAN_API_KEY is configured.
+# Sepolia testnet deployment of the whole Henriable platform (see script/Deploy.s.sol).
+# One run deploys the vehicle-title NFT collection and Henriable (plus a mock USDC only
+# when USDC_ADDRESS is unset), wires Henriable as the NFT minter, writes
+# deployments/<chainId>.json, and verifies every contract on Etherscan when an
+# ETHERSCAN_API_KEY is configured. Uses the real Circle USDC on Sepolia by default.
 #
 # Usage:
 #   ./script/deploy-sepolia.sh [extra forge script flags...]
@@ -56,6 +58,9 @@ export DEPLOYER_PRIVATE_KEY="$SEPOLIA_PRIVATE_KEY"
 
 # Circle's USDC on Sepolia. Override by exporting USDC_ADDRESS before running.
 export USDC_ADDRESS="${USDC_ADDRESS:-0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238}"
+
+# Directory the Solidity script writes the deployment manifest into.
+mkdir -p deployments
 
 # Gas-limit headroom: default 200% of forge's gas estimate (see the header for
 # why). Override with GAS_ESTIMATE_MULTIPLIER=<n>, or by passing your own -g <n>.

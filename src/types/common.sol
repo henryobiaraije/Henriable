@@ -797,6 +797,11 @@ error HInvestmentInvalidRiderNextPayinDate(uint256 newTime, uint256 currentTime)
 /// @param totalSaved The rider's current saved amount, in USDC base units (6 decimals).
 error HRiderSavingsSlashExceedsSaved(uint256 amountSlashed, uint256 totalSaved);
 
+/// @notice Thrown when an address that is not the configured vehicle-title NFT minter
+///         attempts to mint a title.
+/// @param caller The unauthorized caller.
+error HVehicleNftUnauthorizedMinter(address caller);
+
 //</editor-fold desc="Errors">
 
 //<editor-fold desc="Helper Functions">

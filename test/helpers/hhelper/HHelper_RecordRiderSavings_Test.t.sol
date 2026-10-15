@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {HInvestment, HRiderSavings, HRiderSavingsHistory, USDC_UNIT} from "../../../src/types/common.sol";
 import {HHelper} from "../../../src/helpers/HHelper.sol";
+import {HenriableVehicleNFT} from "../../../src/HenriableVehicleNFT.sol";
 
 /// @title Tests for {HHelper.recordRiderSavings}.
 /// @notice The helper accumulates the rider's refundable savings for an investment: it bumps the
@@ -14,7 +15,7 @@ contract HHelperRecordRiderSavingsTest is Test, HHelper {
     bytes32 internal constant INVESTMENT_ID = bytes32("inv-0001");
     address internal constant RIDER = address(0xB1DE);
 
-    constructor() HHelper(address(this), IERC20(address(0))) {}
+    constructor() HHelper(address(this), IERC20(address(0)), new HenriableVehicleNFT(address(this))) {}
 
     function setUp() public {
         HInvestment storage investment = investmentsList.push();

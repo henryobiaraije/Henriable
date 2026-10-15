@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Re-verify an already-deployed Henriable on Sepolia (Etherscan).
+# Re-verify an already-deployed Henriable platform on Sepolia (Etherscan).
 #
 # Why this is separate from deploy-sepolia.sh:
 #   Verification is flaky and re-runnable. Etherscan often has not indexed a
@@ -10,20 +10,18 @@
 #
 # Where the deployment details come from (nothing is typed by hand):
 #   forge writes them to broadcast/Deploy.s.sol/<chainId>/run-latest.json on the
-#   last deploy -- the deployed contract address and the exact constructor args
-#   (the tail of the recorded transaction input). This script reads that file.
-#   Pass an address as the first argument to verify a specific deployment instead.
+#   last deploy -- the deployed contract addresses and, for Henriable, the
+#   constructor args (the tail of the recorded transaction input). This script
+#   reads that file and verifies both deployed contracts.
 #
 # Usage:
-#   ./script/verify-sepolia.sh [contractAddress]
+#   ./script/verify-sepolia.sh
 #
 # Env (from .env):
 #   ETHERSCAN_API_KEY    required; the key used for verification.
-#   SEPOLIA_PRIVATE_KEY  required unless an address is passed as arg 1; used only
-#                        to derive the owner address for the constructor args.
-#   USDC_ADDRESS         optional; defaults to Circle's Sepolia USDC (must match
-#                        the value used at deploy time).
-#   VERIFY_ATTEMPTS      optional; how many times to retry (default 3).
+#   SEPOLIA_PRIVATE_KEY  required; used only to derive the owner for constructor args.
+#   USDC_ADDRESS         optional; defaults to Circle's Sepolia USDC (must match deploy).
+#   VERIFY_ATTEMPTS      optional; how many times to retry each contract (default 3).
 
 # Fail fast on errors, unset variables and failed pipes.
 set -euo pipefail
@@ -49,57 +47,65 @@ fi
 CHAIN_ID=11155111
 BROADCAST="broadcast/Deploy.s.sol/${CHAIN_ID}/run-latest.json"
 
-# Address: first argument, else the Henriable CREATE recorded by the last deploy.
-if [ "$#" -ge 1 ] && [ -n "$1" ]; then
-    CONTRACT_ADDRESS="$1"
-else
-    if [ ! -f "$BROADCAST" ]; then
-        echo "error: no address given and $BROADCAST not found (deploy first)" >&2
-        exit 1
-    fi
-    CONTRACT_ADDRESS="$(python3 - "$BROADCAST" <<'PY'
-import json, sys
-data = json.load(open(sys.argv[1]))
-for tx in data.get("transactions", []):
-    if tx.get("transactionType") == "CREATE" and tx.get("contractName") == "Henriable":
-        print(tx["contractAddress"])
-        break
-else:
-    sys.exit("Henriable CREATE not found in " + sys.argv[1])
-PY
-)"
-fi
-
-# Constructor args must match Deploy.s.sol: (initialOwner, usdc).
-OWNER_ADDRESS="$(cast wallet address --private-key "${SEPOLIA_PRIVATE_KEY:?SEPOLIA_PRIVATE_KEY is not set}")"
-USDC_ADDRESS="${USDC_ADDRESS:-0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238}"
-CONSTRUCTOR_ARGS="$(cast abi-encode "constructor(address,address)" "$OWNER_ADDRESS" "$USDC_ADDRESS")"
-
-echo "Verifying ${CONTRACT_ADDRESS} on chain ${CHAIN_ID}"
-echo "  owner: ${OWNER_ADDRESS}"
-echo "  usdc:  ${USDC_ADDRESS}"
-
-# Etherscan can lag behind the chain; retry a few times before giving up.
-ATTEMPTS="${VERIFY_ATTEMPTS:-3}"
-verified=0
-for attempt in $(seq 1 "$ATTEMPTS"); do
-    if forge verify-contract "$CONTRACT_ADDRESS" src/Henriable.sol:Henriable \
-        --chain sepolia \
-        --constructor-args "$CONSTRUCTOR_ARGS" \
-        --etherscan-api-key "$ETHERSCAN_API_KEY"; then
-        verified=1
-        break
-    fi
-
-    if [ "$attempt" -lt "$ATTEMPTS" ]; then
-        echo "attempt ${attempt}/${ATTEMPTS} failed; retrying in 15s (explorer may still be indexing)..." >&2
-        sleep 15
-    fi
-done
-
-if [ "$verified" -ne 1 ]; then
-    echo "error: verification failed after ${ATTEMPTS} attempts" >&2
+if [ ! -f "$BROADCAST" ]; then
+    echo "error: $BROADCAST not found (deploy first)" >&2
     exit 1
 fi
 
-echo "Verified: ${CONTRACT_ADDRESS}"
+# Read both CREATE addresses recorded by the last deploy.
+mapfile -t ADDRESSES < <(python3 - "$BROADCAST" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1]))
+wanted = ("HenriableVehicleNFT", "Henriable")
+found = {}
+for tx in data.get("transactions", []):
+    name = tx.get("contractName")
+    if tx.get("transactionType") == "CREATE" and name in wanted:
+        found.setdefault(name, tx["contractAddress"])
+for name in wanted:
+    if name not in found:
+        sys.exit(name + " CREATE not found in " + sys.argv[1])
+    print(found[name])
+PY
+)
+
+NFT_ADDRESS="${ADDRESSES[0]}"
+HENRIABLE_ADDRESS="${ADDRESSES[1]}"
+
+# Constructor args must match Deploy.s.sol.
+#   NFT:        (initialOwner)
+#   Henriable:  (initialOwner, usdc, vehicleNft)
+OWNER_ADDRESS="$(cast wallet address --private-key "${SEPOLIA_PRIVATE_KEY:?SEPOLIA_PRIVATE_KEY is not set}")"
+USDC_ADDRESS="${USDC_ADDRESS:-0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238}"
+NFT_ARGS="$(cast abi-encode "constructor(address)" "$OWNER_ADDRESS")"
+HENRIABLE_ARGS="$(cast abi-encode "constructor(address,address,address)" "$OWNER_ADDRESS" "$USDC_ADDRESS" "$NFT_ADDRESS")"
+
+ATTEMPTS="${VERIFY_ATTEMPTS:-3}"
+
+# verify_contract <address> <contract-path> <constructor-args>
+verify_contract() {
+    local address="$1" source="$2" args="$3"
+
+    echo "Verifying ${source} at ${address}"
+    for attempt in $(seq 1 "$ATTEMPTS"); do
+        if forge verify-contract "$address" "$source" \
+            --chain sepolia \
+            --constructor-args "$args" \
+            --etherscan-api-key "$ETHERSCAN_API_KEY"; then
+            echo "Verified: ${address}"
+            return 0
+        fi
+
+        if [ "$attempt" -lt "$ATTEMPTS" ]; then
+            echo "attempt ${attempt}/${ATTEMPTS} failed; retrying in 15s (explorer may still be indexing)..." >&2
+            sleep 15
+        fi
+    done
+
+    echo "error: verification of ${source} at ${address} failed after ${ATTEMPTS} attempts" >&2
+    return 1
+}
+
+echo "Chain ${CHAIN_ID}; owner ${OWNER_ADDRESS}; usdc ${USDC_ADDRESS}"
+verify_contract "$NFT_ADDRESS" "src/HenriableVehicleNFT.sol:HenriableVehicleNFT" "$NFT_ARGS"
+verify_contract "$HENRIABLE_ADDRESS" "src/Henriable.sol:Henriable" "$HENRIABLE_ARGS"

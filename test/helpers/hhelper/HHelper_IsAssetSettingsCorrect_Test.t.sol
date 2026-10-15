@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {HAsset, USDC_UNIT} from "../../../src/types/common.sol";
 import {HHelper} from "../../../src/helpers/HHelper.sol";
+import {HenriableVehicleNFT} from "../../../src/HenriableVehicleNFT.sol";
 
 /// @title Tests for {HHelper.isAssetSettingsCorrect}.
 /// @notice Exercises the asset pricing accuracy check. The check passes when the investor
@@ -14,7 +15,7 @@ import {HHelper} from "../../../src/helpers/HHelper.sol";
 ///         expressed in USDC base units (6 decimals), so a whole-dollar figure is written
 ///         as `<dollars> * USDC_UNIT`.
 contract HHelperIsAssetSettingsCorrectTest is Test, HHelper {
-    constructor() HHelper(address(this), IERC20(address(0))) {}
+    constructor() HHelper(address(this), IERC20(address(0)), new HenriableVehicleNFT(address(this))) {}
 
     /// @notice Builds a correct Keke asset from the worked example: a $1,000 cost price
     ///         covered by $500 of senior buying and $500 of junior buying, $125 of total

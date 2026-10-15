@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {HInvestment, HInvestorPayout, HPayoutType, USDC_UNIT} from "../../../src/types/common.sol";
 import {HHelper} from "../../../src/helpers/HHelper.sol";
+import {HenriableVehicleNFT} from "../../../src/HenriableVehicleNFT.sol";
 
 /// @title Tests for {HHelper.recordTierPayouts}.
 /// @notice The helper appends one equal-share payout per investor in a tier and updates each
@@ -16,7 +17,7 @@ contract HHelperRecordTierPayoutsTest is Test, HHelper {
     address internal constant INVESTOR_ONE = address(0x5111);
     address internal constant INVESTOR_TWO = address(0x5222);
 
-    constructor() HHelper(address(this), IERC20(address(0))) {}
+    constructor() HHelper(address(this), IERC20(address(0)), new HenriableVehicleNFT(address(this))) {}
 
     function setUp() public {
         HInvestment storage investment = investmentsList.push();

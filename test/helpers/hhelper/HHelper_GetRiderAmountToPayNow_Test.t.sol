@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {HAsset, HInvestment, USDC_UNIT} from "../../../src/types/common.sol";
 import {HHelper} from "../../../src/helpers/HHelper.sol";
+import {HenriableVehicleNFT} from "../../../src/HenriableVehicleNFT.sol";
 
 /// @title Tests for {HHelper.getRiderAmountToPayNow}.
 /// @notice The getter reports the next instalment the calling rider owes: the periodic
@@ -18,7 +19,7 @@ contract HHelperGetRiderAmountToPayNowTest is Test, HHelper {
     uint256 internal constant MINIMUM_PAYMENT = 100 * USDC_UNIT;
     uint256 internal constant SAVINGS_CHARGE = 2 * USDC_UNIT;
 
-    constructor() HHelper(address(this), IERC20(address(0))) {}
+    constructor() HHelper(address(this), IERC20(address(0)), new HenriableVehicleNFT(address(this))) {}
 
     function setUp() public {
         HAsset memory asset = HAsset({

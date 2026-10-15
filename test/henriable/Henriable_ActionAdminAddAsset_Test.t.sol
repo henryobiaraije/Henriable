@@ -15,6 +15,7 @@ import {
     USDC_UNIT
 } from "../../src/types/common.sol";
 import {Henriable} from "../../src/Henriable.sol";
+import {HenriableVehicleNFT} from "../../src/HenriableVehicleNFT.sol";
 
 /// @title Tests for {Henriable.actionAdminAddAsset}.
 /// @notice Covers the asset-adding process: only an owner may add, the id must be unique
@@ -29,10 +30,13 @@ contract HenriableActionAdminAddAssetTest is Test {
     address internal constant OWNER_2 = address(0xBEEF);
 
     Henriable internal henriable;
+    HenriableVehicleNFT internal vehicleNft;
 
     function setUp() public {
         // The test contract is owner1; no USDC is needed to register an asset.
-        henriable = new Henriable(address(this), IERC20(address(0)));
+        vehicleNft = new HenriableVehicleNFT(address(this));
+        henriable = new Henriable(address(this), IERC20(address(0)), vehicleNft);
+        vehicleNft.setMinter(address(henriable));
     }
 
     /// @notice Builds a correct Keke asset from the worked example: a $1,000 cost price
