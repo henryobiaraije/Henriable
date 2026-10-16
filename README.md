@@ -7,6 +7,35 @@
 1.  Vehicle investment platform where investors invest, riders hire (via hire purchase) and paying periodically.  
 2. Yields are shared to investors and admin.
 
+# **Flow**
+
+How the platform works from setup to completion.
+
+```mermaid
+flowchart TD
+    A["Admin: actionAdminAddAsset<br/>Define HAsset economics"] --> B["Admin: actionAdminAddInvestment<br/>Status: Pending"]
+    B --> C["Admin: actionAdminSetNextInvestmentTimes<br/>Set the investment window"]
+    C --> D{"Window open?<br/>maybeUpdateInvestmentStatus"}
+    D -->|yes| E["Status: AcceptingInvestments"]
+    E --> F["Investors: actionInvest<br/>Take Senior / Junior slots"]
+    F --> G{"Both pools full?"}
+    G -->|no| F
+    G -->|yes| H["Status: InvestmentDone<br/>NFT title minted to the contract"]
+    H --> I["Admin: actionSetNextHireRoundTime<br/>Set the hire-request window"]
+    I --> J{"Window open?<br/>maybeUpdateInvestmentStatus"}
+    J -->|yes| K["Status: AcceptingRiders"]
+    K --> L["Riders: actionRiderRegisterAsARider<br/>Pay the initial buy-in"]
+    L --> M["Admin: actionAdminAcceptRider<br/>Accept one, refund the rest<br/>Status: Hired"]
+    M --> N["Rider: actionRiderPayin<br/>Pay >= minimum + savings charge"]
+    N --> O["Share the payment: Senior -> Junior -> Owner<br/>Savings held for the rider<br/>riderNextPayinDate += period"]
+    O --> P{"totalAmountPaid >= sellPrice?"}
+    P -->|no| N
+    P -->|yes| Q["actionTransferOwnershipToRider<br/>Status: Complete<br/>Refund savings + transfer the NFT to the rider"]
+    M -. "Admin: actionAdminExtendRiderPayingForInvestment<br/>Extend the due date / slash savings" .-> M
+```
+
+The lifecycle status advances lazily: `maybeUpdateInvestmentStatus` runs on the first caller-triggered action (`actionInvest`, `actionRiderRegisterAsARider`, `actionAdminAcceptRider`) or the `actionMaybeUpdateStatus` frontend hook, and only once the admin-set window is open. Each rider payment pushes the next due date by exactly one period (`riderNextPayinDate += periodicRiderPayingInMinutes * 60`), so paying early carries the unused minutes into the next window.
+
 # **Requirements**
 
 1. Currency is in USDC  
